@@ -4,11 +4,9 @@ import io from 'socket.io-client';
 import { PlayCircleIcon, PauseCircleIcon, PaperAirplaneIcon, UserPlusIcon, XCircleIcon, CheckCircleIcon, LinkIcon, VideoCameraIcon, UsersIcon } from '@heroicons/react/24/solid';
 
 // Define the backend server URL.
-// IMPORTANT: For deployment on Render, replace this with your actual backend service URL.
-// During local development, it will typically be http://localhost:3001.
-const SERVER_URL = process.env.NODE_ENV === 'production'
-    ? 'YOUR_RENDER_BACKEND_URL' // Replace with your Render.com backend URL
-    : 'http://localhost:3001';
+// In a production environment (like Render.com), process.env.REACT_APP_SERVER_URL will be injected.
+// For local development, it defaults to http://localhost:3001.
+const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:3001';
 
 // Global Socket.io instance to ensure it's managed correctly
 // Use a ref to hold the socket instance across renders
@@ -176,12 +174,24 @@ function HomePage() {
                     <button
                         onClick={() => {
                             const roomLink = `${window.location.origin}/room/${successMessage.split(': ').pop()}`;
-                            document.execCommand('copy'); // Using document.execCommand for clipboard copy
-                            if (document.execCommand('copy')) {
-                                alert('Room link copied to clipboard!'); // Using alert for simplicity, consider a custom modal
-                            } else {
-                                console.error('Failed to copy text.');
+                            // Use document.execCommand for clipboard copy for broader compatibility, especially in iframes
+                            // Create a temporary textarea element to hold the text to copy
+                            const tempTextArea = document.createElement('textarea');
+                            tempTextArea.value = roomLink;
+                            document.body.appendChild(tempTextArea);
+                            tempTextArea.select(); // Select the text
+                            try {
+                                const successful = document.execCommand('copy'); // Execute the copy command
+                                if (successful) {
+                                    alert('Room link copied to clipboard!');
+                                } else {
+                                    throw new Error('Copy command failed.');
+                                }
+                            } catch (err) {
+                                console.error('Failed to copy text: ', err);
                                 alert('Failed to copy link. Please copy it manually.');
+                            } finally {
+                                document.body.removeChild(tempTextArea); // Clean up the temporary element
                             }
                         }}
                         className="bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg flex items-center gap-2 text-base transition duration-300 ease-in-out transform hover:scale-105"
@@ -313,122 +323,4 @@ function RoomPage() {
 
         socket.on('user_joined', ({ username, socketId }) => {
             setUsersInRoom(prev => [...prev, { username, socketId }]);
-            setChatMessages(prev => [...prev, { username: 'System', message: `${username} joined the room.`, timestamp: Date.now() }]);
-        });
-
-        socket.on('user_left', ({ username }) => {
-            setUsersInRoom(prev => prev.filter(u => u.username !== username)); // Filter by username as socketId might be old
-            setChatMessages(prev => [...prev, { username: 'System', message: `${username} left the room.`, timestamp: Date.now() }]);
-        });
-
-        socket.on('room_closed', (message) => {
-            setStatusMessage(`${message} Redirecting to home...`);
-            socket.disconnect(); // Ensure socket is disconnected
-            setTimeout(() => navigate('/'), 3000);
-        });
-
-        socket.on('error_message', (msg) => {
-            setStatusMessage(msg);
-            setTimeout(() => setStatusMessage(''), 3000); // Clear error after 3 seconds
-        });
-
-        // Cleanup on unmount or dependency change
-        return () => {
-            console.log('Cleaning up socket listeners and disconnecting...');
-            if (socket) {
-                socket.off('room_created');
-                socket.off('join_approved');
-                socket.off('join_rejected');
-                socket.off('join_pending');
-                socket.off('new_join_request');
-                socket.off('room_data_update');
-                socket.off('video_sync');
-                socket.off('video_url_updated');
-                socket.off('chat_message');
-                socket.off('user_joined');
-                socket.off('user_left');
-                socket.off('room_closed');
-                socket.off('error_message');
-                // Do NOT disconnect socket here if you want to reuse it.
-                // Let the 'disconnect' event on the server handle if the browser tab closes.
-                // For manual leaving, we might disconnect.
-            }
-        };
-    }, [roomId, username, isHost, videoUrl, navigate]); // Rerun if these initial states change
-
-    // Effect for auto-scrolling chat
-    useEffect(() => {
-        chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [chatMessages]);
-
-    // Effect for video event listeners
-    useEffect(() => {
-        const video = videoRef.current;
-        if (!video || !isHost) return; // Only host sends sync events
-
-        const sendSync = () => {
-            socket.emit('video_sync', {
-                playing: !video.paused,
-                currentTime: video.currentTime
-            });
-        };
-
-        // Attach listeners for host's video actions
-        video.addEventListener('play', sendSync);
-        video.addEventListener('pause', sendSync);
-        video.addEventListener('seeked', sendSync);
-
-        // Cleanup listeners
-        return () => {
-            video.removeEventListener('play', sendSync);
-            video.removeEventListener('pause', sendSync);
-            video.removeEventListener('seeked', sendSync);
-        };
-    }, [isHost]); // Re-attach if host status changes
-
-    // Handlers for host actions
-    const handleApproveJoin = (requesterSocketId) => {
-        if (socket) {
-            socket.emit('approve_join', { roomId, requesterSocketId });
-            setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId)); // Optimistic UI update
-        }
-    };
-
-    const handleRejectJoin = (requesterSocketId) => {
-        if (socket) {
-            socket.emit('reject_join', { roomId, requesterSocketId });
-            setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId)); // Optimistic UI update
-        }
-    };
-
-    const handleSendMessage = (e) => {
-        e.preventDefault();
-        if (newMessage.trim() && socket) {
-            socket.emit('chat_message', newMessage.trim());
-            setNewMessage('');
-            // Optimistic UI update for chat
-            setChatMessages(prev => [...prev, { username: username, message: newMessage.trim(), timestamp: Date.now() }]);
-        }
-    };
-
-    const handleSetVideoUrl = () => {
-        const newUrl = prompt("Enter new direct video URL:");
-        if (newUrl && isValidVideoUrl(newUrl)) {
-            if (socket) {
-                socket.emit('set_video_url', { roomId, videoUrl: newUrl });
-            }
-        } else if (newUrl) {
-            setStatusMessage('Invalid video URL provided.');
-            setTimeout(() => setStatusMessage(''), 3000);
-        }
-    };
-
-    const handleInitialUsernameSubmit = () => {
-        if (username.trim()) {
-            setShowUsernameModal(false);
-            // Re-trigger the main useEffect to connect socket and join
-            // This is a bit of a hack; ideally, you'd have a more robust initial connection flow
-            // For now, it will work because the dependencies (username) will change.
-        } else {
-            setStatusMessage('Please enter a username to join.');
-   
+            setChatMessages(prev => [...prev, { username: 'System
