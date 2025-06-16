@@ -1,8 +1,9 @@
+// client/src/index.js
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css'; // Import the CSS file
 import App from './App'; // Import your main App component
-import reportWebVitals from './reportWebVitals';
+// Removed: import reportWebVitals from './reportWebVitals'; // THIS LINE IS DELETED
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
@@ -11,7 +12,7 @@ root.render(
   </React.StrictMode>
 );
 
-// If you want to start measuring performance in your app, pass a function
-// to log results (for example: reportWebVitals(console.log))
-// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
-reportWebVitals();
+// Removed: If you want to start measuring performance in your app, pass a function
+// Removed: to log results (for example: reportWebVitals(console.log))
+// Removed: or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
+// Removed: reportWebVitals(); // THIS LINE IS DELETED
