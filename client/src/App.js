@@ -5,11 +5,15 @@ import ReactPlayer from 'react-player'; // Import react-player
 import { PlayCircleIcon, PauseCircleIcon, PaperAirplaneIcon, UserPlusIcon, XCircleIcon, CheckCircleIcon, LinkIcon, VideoCameraIcon, UsersIcon } from '@heroicons/react/24/solid';
 
 // Define the backend server URL.
+// In a production environment (like Render.com), process.env.REACT_APP_SERVER_URL will be injected.
+// For local development, it defaults to http://localhost:3001.
 const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:3001';
 
+// Global Socket.io instance to ensure it's managed correctly
+// Use a ref to hold the socket instance across renders
 let socket;
 
-// We'll make isValidVideoUrl more lenient now as react-player handles many formats
+// Helper function to validate video URLs
 const isValidVideoUrl = (url) => {
     // React-player handles many formats, so we just need a basic URL validation now.
     // It will return false for obviously invalid URLs.
@@ -196,6 +200,7 @@ function RoomPage() {
     const location = useLocation();
     const navigate = useNavigate();
     const playerRef = useRef(null); // Use a ref for the ReactPlayer component
+    const chatMessagesEndRef = useRef(null); // Ref for auto-scrolling chat
 
     const [username, setUsername] = useState(location.state?.username || '');
     const [isHost, setIsHost] = useState(location.state?.isHost || false);
@@ -301,7 +306,7 @@ function RoomPage() {
         });
 
         socket.on('user_left', ({ username }) => {
-            setUsersInRoom(prev => prev.filter(u => u.username !== username));
+            setUsersInRoom(prev => prev.filter(u => u.username !== username)); // Filter by username as socketId might be old
             setChatMessages(prev => [...prev, { username: 'System', message: `${username} left the room.`, timestamp: Date.now() }]);
         });
 
@@ -334,7 +339,6 @@ function RoomPage() {
     }, [roomId, username, isHost, videoUrl, navigate]);
 
     // Effect for auto-scrolling chat
-    const chatMessagesEndRef = useRef(null);
     useEffect(() => { chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
 
 
@@ -342,7 +346,8 @@ function RoomPage() {
     const handlePlayerProgress = useCallback((state) => {
         if (isHost && playerRef.current) {
             // Only send sync if playing to avoid excessive updates when paused
-            if (isPlaying) {
+            // Also, only send if time has changed significantly to reduce network traffic
+            if (isPlaying && Math.abs(state.playedSeconds - currentTime) > 0.5) { // Sync if playing and time difference > 0.5s
                 socket.emit('video_sync', {
                     playing: isPlaying,
                     currentTime: state.playedSeconds
@@ -350,7 +355,7 @@ function RoomPage() {
             }
             setCurrentTime(state.playedSeconds);
         }
-    }, [isHost, isPlaying]);
+    }, [isHost, isPlaying, currentTime]); // Add currentTime to dependencies
 
     const handlePlayerPlay = useCallback(() => {
         if (isHost) {
@@ -373,14 +378,16 @@ function RoomPage() {
     }, [isHost, currentTime]);
 
     const handlePlayerSeek = useCallback((e) => {
-        if (isHost) {
-            const seekToTime = e.target.value; // For input type range
-            // OR if using the native controls or react-player's onProgress which gives full state:
-            // const seekToTime = playerRef.current.getCurrentTime(); // Get exact time after seek
-            setIsPlaying(playerRef.current ? !playerRef.current.getInternalPlayer().paused : false); // Update playing state
+        // This handler might be too simplistic for direct seek events from react-player's controls
+        // ReactPlayer's onProgress or its internal player's 'seeked' event is usually better.
+        // For custom seek controls (e.g., a slider), you'd manually call seekTo and then emit sync.
+        if (isHost && playerRef.current) {
+             // After a seek, ReactPlayer will trigger onProgress with the new time.
+             // We ensure playing state is correct.
+            setIsPlaying(playerRef.current ? !playerRef.current.getInternalPlayer().paused : false);
             socket.emit('video_sync', {
                 playing: playerRef.current ? !playerRef.current.getInternalPlayer().paused : false,
-                currentTime: playerRef.current ? playerRef.current.getCurrentTime() : currentTime
+                currentTime: playerRef.current ? playerRef.current.getCurrentTime() : currentTime // Use currentTime after seek
             });
         }
     }, [isHost, currentTime]);
