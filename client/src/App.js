@@ -636,4 +636,6 @@ function RoomPage() {
                             <span className={`inline-block w-3 h-3 rounded-full mr-3 ${isHost && user.socketId === socket?.id ? 'bg-indigo-400' : 'bg-green-400'}`}></span>
                             <span className="font-medium">{user.username}</span>
                             {/* Check if the current user (this client) is the host */}
-                            {isHost && user.
+                            {isHost && user.socketId === socket?.id && <span className="text-purple-400 ml-2 text-sm">(Host, You)</span>}
+                            {/* Check if this is the current client (but not the host, as handled above) */}
+                            {!is
