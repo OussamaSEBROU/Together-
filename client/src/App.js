@@ -305,7 +305,7 @@ function RoomPage() {
                 setStatusMessage('You are the host. Please set the video URL to start the session.');
                 console.log("[RoomPage Effect] Host is missing video URL, prompting.");
             } else {
-                console.log(`[RoomPage Effect] Host emitting 'create_room' with videoUrl: ${videoUrl}`);
+                console.log(`[RoomPage Effect] Host emitting 'create_room', with videoUrl: ${videoUrl}`);
                 socket.emit('create_room', { username, videoUrl });
             }
         } else {
@@ -644,7 +644,3 @@ function RoomPage() {
                                 className="flex-1 p-3 rounded-lg bg-gray-600 border border-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-200 placeholder-gray-400"
                                 value={newVideoInput}
                                 onChange={(e) => setNewVideoInput(e.target.value)}
-                            />
-                            <button
-                                onClick={handleSetNewVideoUrl}
-                                className="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-5 rounded-lg transition duration-200 transform hover:scale-105 shadow-lg flex items-center gap
