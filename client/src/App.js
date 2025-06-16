@@ -292,7 +292,7 @@ function RoomPage() {
 
         if (!socket) {
             socket = io(SERVER_URL);
-            console.log("[RoomPage Effect] Socket initialized.");
+            console.log("[RoomPage Effect] Socket initialized for the first time.");
         }
 
         // Send initial join request or room creation for host
@@ -311,36 +311,41 @@ function RoomPage() {
 
 
         // --- Socket Event Listeners ---
-        socket.on('room_created', (id) => { console.log('Host: Room created with ID', id); });
+        socket.on('room_created', (id) => { console.log('[SOCKET EVENT] Host: Room created with ID', id); });
 
         socket.on('join_approved', (data) => {
-            console.log('Join approved! Received data:', data); // Log the full data received
+            console.log('[SOCKET EVENT] Join approved! Received data:', data);
             setVideoUrl(data.videoUrl);
-            setIsPlaying(data.videoState.playing);
-            setCurrentTime(data.videoState.currentTime);
+            setIsPlaying(data.videoState.playing); // Set local playing state
+            setCurrentTime(data.videoState.currentTime); // Set local current time
             setUsersInRoom(data.users);
 
-            // *** CRITICAL FIX FOR CHAT HISTORY: Explicitly set chat messages ***
+            // *** FIX FOR CHAT HISTORY: Ensure chat messages are correctly set from data.messages ***
             if (Array.isArray(data.messages)) {
                 setChatMessages(data.messages);
-                console.log("Chat messages after join_approved (from data.messages):", data.messages);
+                console.log("[CLIENT CHAT DEBUG] Chat messages successfully set from join_approved data:", data.messages);
             } else {
                 setChatMessages([]);
-                console.warn("Received non-array data.messages on join_approved:", data.messages);
+                console.warn("[CLIENT CHAT DEBUG] Received non-array data.messages on join_approved:", data.messages);
             }
 
             setStatusMessage('');
             if (playerRef.current) {
-                console.log(`Seeking player to ${data.videoState.currentTime}, playing state: ${data.videoState.playing}`);
-                playerRef.current.seekTo(data.videoState.currentTime, 'seconds');
-                // Ensure player state is also explicitly set here
-                // Note: ReactPlayer's `playing` prop usually handles this, but forcing it can help
-                // if there are browser autoplay policy issues, the `playing` prop handles that.
+                const player = playerRef.current;
+                console.log(`[CLIENT VIDEO DEBUG] Join Approved: Seeking player to ${data.videoState.currentTime}, target playing state: ${data.videoState.playing}`);
+                player.seekTo(data.videoState.currentTime, 'seconds');
+
+                // *** FIX FOR VIDEO SYNC: Explicitly control play/pause for non-hosts ***
+                if (data.videoState.playing) {
+                    player.getInternalPlayer()?.play().catch(e => console.error("Autoplay failed for non-host on join_approved:", e));
+                } else {
+                    player.getInternalPlayer()?.pause();
+                }
             }
         });
 
         socket.on('join_rejected', (reason) => {
-            console.log('Join rejected:', reason);
+            console.log('[SOCKET EVENT] Join rejected:', reason);
             setStatusMessage(`Join rejected: ${reason}. Redirecting to home...`);
             socket.disconnect();
             setTimeout(() => navigate('/'), 3000);
@@ -350,10 +355,11 @@ function RoomPage() {
 
         socket.on('new_join_request', ({ requesterSocketId, username }) => {
             setPendingRequests(prev => [...prev, { requesterSocketId, username }]);
-            console.log(`New join request from ${username} (${requesterSocketId})`);
+            console.log(`[SOCKET EVENT] New join request from ${username} (${requesterSocketId})`);
         });
 
         socket.on('room_data_update', (data) => {
+            console.log('[SOCKET EVENT] Room data update received:', data);
             if (data.users) setUsersInRoom(data.users);
             if (data.pendingRequests) setPendingRequests(data.pendingRequests);
         });
@@ -364,40 +370,48 @@ function RoomPage() {
                 const currentPlaybackTime = player.getCurrentTime();
 
                 // Check for significant time difference OR a mismatch in play/pause state
-                // `player.getInternalPlayer().paused` is true when paused, `state.playing` is true when playing
-                // So, if player is paused but should be playing, OR player is playing but should be paused, sync.
+                // player.getInternalPlayer().paused is true when paused, state.playing is true when playing
+                // If player is paused but should be playing, OR player is playing but should be paused, sync.
                 if (Math.abs(currentPlaybackTime - state.currentTime) > 1 || player.getInternalPlayer().paused === state.playing) {
-                     console.log(`[Video Sync] Non-host syncing. Current: ${currentPlaybackTime.toFixed(2)}, Target: ${state.currentTime.toFixed(2)}. Player Paused: ${player.getInternalPlayer().paused}, Target Playing: ${state.playing}`);
+                     console.log(`[CLIENT VIDEO DEBUG] Video Sync: Non-host seeking. Current: ${currentPlaybackTime.toFixed(2)}, Target: ${state.currentTime.toFixed(2)}. Player Paused: ${player.getInternalPlayer().paused}, Target Playing: ${state.playing}`);
                     player.seekTo(state.currentTime, 'seconds');
                 }
 
-                // Explicitly set playing state
-                if (state.playing && player.getInternalPlayer().paused) {
-                    console.log("[Video Sync] Non-host playing video.");
-                    setIsPlaying(true); // Triggers ReactPlayer to play
-                } else if (!state.playing && !player.getInternalPlayer().paused) {
-                    console.log("[Video Sync] Non-host pausing video.");
-                    setIsPlaying(false); // Triggers ReactPlayer to pause
+                // *** FIX FOR VIDEO SYNC: Explicitly control play/pause for non-hosts ***
+                if (state.playing && player.getInternalPlayer()?.paused) {
+                    console.log("[CLIENT VIDEO DEBUG] Video Sync: Non-host playing video via direct call.");
+                    player.getInternalPlayer()?.play().catch(e => console.error("Autoplay failed for non-host on video_sync:", e));
+                    setIsPlaying(true); // Keep local state in sync
+                } else if (!state.playing && !player.getInternalPlayer()?.paused) {
+                    console.log("[CLIENT VIDEO DEBUG] Video Sync: Non-host pausing video via direct call.");
+                    player.getInternalPlayer()?.pause();
+                    setIsPlaying(false); // Keep local state in sync
                 }
                 setCurrentTime(state.currentTime); // Update current time locally
             }
         });
 
         socket.on('video_url_updated', ({ videoUrl, videoState }) => {
-            console.log(`[Video URL Updated] Setting new URL: ${videoUrl}. Video state: ${JSON.stringify(videoState)}`);
+            console.log(`[SOCKET EVENT] Video URL Updated: Setting new URL: ${videoUrl}. Video state: ${JSON.stringify(videoState)}`);
             setVideoUrl(videoUrl);
             setIsPlaying(videoState.playing);
             setCurrentTime(videoState.currentTime);
             if (playerRef.current) {
                 playerRef.current.seekTo(videoState.currentTime, 'seconds');
+                // Attempt play if video state indicates playing
+                if (videoState.playing) {
+                    playerRef.current.getInternalPlayer()?.play().catch(e => console.error("Autoplay failed on video_url_updated:", e));
+                } else {
+                    playerRef.current.getInternalPlayer()?.pause();
+                }
             }
         });
 
         socket.on('chat_message', (msg) => {
-            console.log("Received new chat message:", msg);
+            console.log("[SOCKET EVENT] Received new chat message:", msg);
             setChatMessages(prev => {
                 const newChatMessages = [...prev, msg];
-                console.log("Updated chat messages state (new message appended):", newChatMessages);
+                console.log("[CLIENT CHAT DEBUG] Updated chat messages state (new message appended):", newChatMessages);
                 return newChatMessages;
             });
         });
@@ -408,11 +422,13 @@ function RoomPage() {
                 return [...prev, { username, socketId }];
             });
             setChatMessages(prev => [...prev, { username: 'System', message: `${username} joined the room.`, timestamp: Date.now() }]);
+            console.log(`[SOCKET EVENT] User joined: ${username} (${socketId}). Current users:`, usersInRoom); // Log current users
         });
 
         socket.on('user_left', ({ username }) => {
             setUsersInRoom(prev => prev.filter(u => u.username !== username));
             setChatMessages(prev => [...prev, { username: 'System', message: `${username} left the room.`, timestamp: Date.now() }]);
+            console.log(`[SOCKET EVENT] User left: ${username}. Current users:`, usersInRoom); // Log current users
         });
 
         socket.on('room_closed', (message) => {
@@ -425,7 +441,7 @@ function RoomPage() {
 
         // Cleanup function for useEffect:
         return () => {
-            console.log("[RoomPage Effect] Cleaning up socket listeners.");
+            console.log("[RoomPage Effect] Cleaning up socket listeners on component unmount/re-render.");
             if (socket) {
                 socket.off('room_created');
                 socket.off('join_approved');
@@ -442,11 +458,12 @@ function RoomPage() {
                 socket.off('error_message');
             }
         };
-    }, [roomId, username, isHost, navigate]); // Removed videoUrl from dependencies (useEffect will react to setVideoUrl directly)
+    }, [roomId, username, isHost, navigate]); // Crucial: Removed chatMessages from dependencies here.
 
-    // Effect for auto-scrolling chat messages to the bottom
+    // Separate useEffect for auto-scrolling chat - dependent only on chatMessages
     useEffect(() => {
         if (chatMessagesEndRef.current) {
+            console.log("[CLIENT CHAT DEBUG] Chat messages state updated, scrolling to view.");
             chatMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
     }, [chatMessages]); // This dependency is correct for scrolling
@@ -511,7 +528,7 @@ function RoomPage() {
             }
             if (!isHost) {
                  socket.emit('join_request', { roomId, username });
-            } else if (isHost && videoUrl) {
+            } else if (isHost && videoUrl) { // If host and video already set, ensure room is created
                 socket.emit('create_room', { username, videoUrl });
             }
         } else {
@@ -615,7 +632,6 @@ function RoomPage() {
                         ref={playerRef}
                         url={videoUrl}
                         playing={isPlaying}
-                        // Controls are never shown natively on ReactPlayer, we rely on custom ones for host
                         controls={false} // Ensure native controls are always off
                         onPlay={isHost ? handlePlayerPlay : undefined}
                         onPause={isHost ? handlePlayerPause : undefined}
@@ -627,16 +643,16 @@ function RoomPage() {
                         config={{
                             youtube: {
                                 playerVars: {
-                                    controls: 0, // Never show native YouTube controls
+                                    controls: 0,
                                     modestbranding: 1,
                                     showinfo: 0,
                                     rel: 0,
-                                    autoplay: 0, // Autoplay can be problematic, rely on `playing` prop
+                                    autoplay: 0,
                                 }
                             },
                             vimeo: {
                                 playerOptions: {
-                                    controls: 0, // Never show native Vimeo controls
+                                    controls: 0,
                                 }
                             }
                         }}
@@ -716,7 +732,7 @@ function RoomPage() {
                 <div className="flex-grow flex flex-col bg-gray-700 rounded-xl overflow-hidden mb-4 shadow-inner border border-gray-600">
                     <div className="flex-grow p-4 overflow-y-auto custom-scrollbar">
                         {chatMessages.map((msg, index) => (
-                            <div key={index} className="mb-2 text-sm">
+                            <div key={msg.timestamp || index} className="mb-2 text-sm"> {/* Use timestamp as key if available, fallback to index */}
                                 <span className="font-bold text-indigo-300">{msg.username}:</span>{' '}
                                 <span className="text-gray-200 break-words">{msg.message}</span>
                                 <span className="text-gray-400 ml-2 text-xs">
