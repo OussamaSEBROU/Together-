@@ -144,7 +144,7 @@ io.on('connection', (socket) => {
         const { username } = room.pendingRequests.splice(requestIndex, 1)[0]; // Remove from pending
         io.to(requesterSocketId).emit('join_rejected', 'Host rejected your request.');
         console.log(`[REJECT_JOIN] Sent 'join_rejected' to ${requesterSocketId}.`);
-        io.to(room.hostId).emit('room_data_update', { users: room.users, pendingRequests: room.pendingRequests }); // Only update host on rejection
+        io.to(room.hostId).emit('room_data_update', { users: room.users, pendingRequests: room.pendingRequests }); // Only update host
         // Do not update other users with pending requests unless they need to know someone was rejected
     });
 
