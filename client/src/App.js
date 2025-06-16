@@ -4,11 +4,9 @@ import io from 'socket.io-client';
 import { PlayCircleIcon, PauseCircleIcon, PaperAirplaneIcon, UserPlusIcon, XCircleIcon, CheckCircleIcon, LinkIcon, VideoCameraIcon, UsersIcon } from '@heroicons/react/24/solid';
 
 // Define the backend server URL.
-// IMPORTANT: For deployment on Render, replace this with your actual backend service URL.
-// During local development, it will typically be http://localhost:3001.
-const SERVER_URL = process.env.NODE_ENV === 'production'
-    ? 'YOUR_RENDER_BACKEND_URL' // Replace with your Render.com backend URL
-    : 'http://localhost:3001';
+// In a production environment (like Render.com), process.env.REACT_APP_SERVER_URL will be injected.
+// For local development, it defaults to http://localhost:3001.
+const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:3001';
 
 // Global Socket.io instance to ensure it's managed correctly
 // Use a ref to hold the socket instance across renders
@@ -176,12 +174,25 @@ function HomePage() {
                     <button
                         onClick={() => {
                             const roomLink = `${window.location.origin}/room/${successMessage.split(': ').pop()}`;
-                            navigator.clipboard.writeText(roomLink).then(() => {
-                                alert('Room link copied to clipboard!'); // Using alert for simplicity, consider a custom modal
-                            }).catch(err => {
+                            // Use document.execCommand for clipboard copy for broader compatibility, especially in iframes
+                            // Create a temporary textarea element to hold the text to copy
+                            const tempTextArea = document.createElement('textarea');
+                            tempTextArea.value = roomLink;
+                            document.body.appendChild(tempTextArea);
+                            tempTextArea.select(); // Select the text
+                            try {
+                                const successful = document.execCommand('copy'); // Execute the copy command
+                                if (successful) {
+                                    alert('Room link copied to clipboard!');
+                                } else {
+                                    throw new Error('Copy command failed.');
+                                }
+                            } catch (err) {
                                 console.error('Failed to copy text: ', err);
                                 alert('Failed to copy link. Please copy it manually.');
-                            });
+                            } finally {
+                                document.body.removeChild(tempTextArea); // Clean up the temporary element
+                            }
                         }}
                         className="bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg flex items-center gap-2 text-base transition duration-300 ease-in-out transform hover:scale-105"
                     >
@@ -312,11 +323,13 @@ function RoomPage() {
 
         socket.on('user_joined', ({ username, socketId }) => {
             setUsersInRoom(prev => [...prev, { username, socketId }]);
+            // Corrected and complete line here:
             setChatMessages(prev => [...prev, { username: 'System', message: `${username} joined the room.`, timestamp: Date.now() }]);
         });
 
         socket.on('user_left', ({ username }) => {
             setUsersInRoom(prev => prev.filter(u => u.username !== username)); // Filter by username as socketId might be old
+            // Corrected and complete line here:
             setChatMessages(prev => [...prev, { username: 'System', message: `${username} left the room.`, timestamp: Date.now() }]);
         });
 
@@ -475,6 +488,7 @@ function RoomPage() {
         );
     }
 
+    // Conditional render for non-host waiting for videoUrl
     if (!videoUrl && !isHost) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-6rem)] text-center animate-fade-in px-4">
@@ -484,6 +498,7 @@ function RoomPage() {
             </div>
         );
     }
+    // Conditional render for host to set videoUrl
     if (!videoUrl && isHost) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-6rem)] text-center animate-fade-in px-4">
@@ -626,11 +641,14 @@ function RoomPage() {
                 <ul className="bg-gray-700 rounded-xl p-4 max-h-48 overflow-y-auto custom-scrollbar border border-gray-600 shadow-inner">
                     {usersInRoom.map((user, index) => (
                         <li key={index} className="flex items-center text-gray-200 mb-2 p-1">
-                            <span className={`inline-block w-3 h-3 rounded-full mr-3 ${isHost && user.socketId === socket.id ? 'bg-indigo-400' : 'bg-green-400'}`}></span>
+                            <span className={`inline-block w-3 h-3 rounded-full mr-3 ${isHost && user.socketId === socket?.id ? 'bg-indigo-400' : 'bg-green-400'}`}></span>
                             <span className="font-medium">{user.username}</span>
-                            {user.socketId === socket.id && <span className="text-gray-400 ml-2 text-sm">(You)</span>}
-                            {/* Find the host from usersInRoom based on socket.id if available, otherwise fallback */}
-                            {usersInRoom.some(u => u.socketId === user.socketId && u.socketId === usersInRoom.find(hostUser => hostUser.socketId === socket?.id)?.socketId) && (
+                            {/* Check if the current user (this client) is the host */}
+                            {isHost && user.socketId === socket?.id && <span className="text-purple-400 ml-2 text-sm">(Host, You)</span>}
+                            {/* Check if this is the current client (but not the host, as handled above) */}
+                            {!isHost && user.socketId === socket?.id && <span className="text-gray-400 ml-2 text-sm">(You)</span>}
+                            {/* If the current client is the host, mark the user in the list with matching socketId as (Host) */}
+                            {isHost && user.socketId === usersInRoom.find(u => u.socketId === socket?.id)?.socketId && user.socketId !== socket?.id && (
                                 <span className="text-purple-400 ml-2 text-sm">(Host)</span>
                             )}
                         </li>
@@ -642,5 +660,3 @@ function RoomPage() {
 }
 
 export default App;
-
-
