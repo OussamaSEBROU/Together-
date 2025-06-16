@@ -1,5 +1,5 @@
 {
-  "name": "syncwatch-backend",
+  "name": "syncwatch-server",
   "version": "1.0.0",
   "description": "Backend for synchronized video watching app",
   "main": "server.js",
