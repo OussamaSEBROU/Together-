@@ -409,6 +409,22 @@ function RoomPage() {
         }
     };
 
+    // New functions for handling join requests
+    const handleApproveJoin = (requesterSocketId) => {
+        if (socket && isHost) {
+            socket.emit('approve_join', { roomId, requesterSocketId });
+            setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId));
+        }
+    };
+
+    const handleRejectJoin = (requesterSocketId) => {
+        if (socket && isHost) {
+            socket.emit('reject_join', { roomId, requesterSocketId });
+            setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId));
+        }
+    };
+
+
     if (showUsernameModal) {
         return (
             <div className="fixed inset-0 bg-gray-900 bg-opacity-95 flex items-center justify-center z-50 p-4">
@@ -622,15 +638,4 @@ function RoomPage() {
                             {/* Check if this is the current client (but not the host, as handled above) */}
                             {!isHost && user.socketId === socket?.id && <span className="text-gray-400 ml-2 text-sm">(You)</span>}
                             {/* If the current client is the host, mark the user in the list with matching socketId as (Host) */}
-                            {isHost && user.socketId === usersInRoom.find(u => u.socketId === socket?.id)?.socketId && user.socketId !== socket?.id && (
-                                <span className="text-purple-400 ml-2 text-sm">(Host)</span>
-                            )}
-                        </li>
-                    ))}
-                </ul>
-            </div>
-        </div>
-    );
-}
-
-export default App;
+                            {isHost && user.socketId === usersInRoom.find
