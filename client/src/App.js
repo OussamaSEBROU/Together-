@@ -5,9 +5,11 @@ import ReactPlayer from 'react-player'; // <<< IMPORTANT: Make sure this is pres
 import { PlayCircleIcon, PauseCircleIcon, PaperAirplaneIcon, UserPlusIcon, XCircleIcon, CheckCircleIcon, LinkIcon, VideoCameraIcon, UsersIcon } from '@heroicons/react/24/solid';
 
 // Define the backend server URL.
+// For a self-contained Canvas environment, process.env might not be available.
+// Ensure your backend server is running and accessible at this URL.
 const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:3001';
 
-let socket;
+let socket; // Global socket instance for simplicity in this example
 
 // Helper function to validate video URLs using ReactPlayer's capabilities
 const isValidVideoUrl = (url) => {
@@ -17,17 +19,66 @@ const isValidVideoUrl = (url) => {
 
 function App() {
     return (
-        <Router>
-            <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-gray-100 font-inter flex flex-col items-center p-4">
-                <Routes>
-                    <Route path="/" element={<HomePage />} />
-                    <Route path="/room/:roomId" element={<RoomPage />} />
-                </Routes>
-                <footer className="mt-auto py-4 text-center text-gray-400 text-sm">
-                    Developed by Oussama SEBROU
-                </footer>
-            </div>
-        </Router>
+        // Add custom scrollbar styles here for the whole app
+        <>
+            <style>
+                {`
+                /* Inter Font Import */
+                @import url('https://rsms.me/inter/inter.css');
+                html { font-family: 'Inter', sans-serif; }
+                @supports (font-variation-settings: normal) {
+                    html { font-family: 'Inter var', sans-serif; }
+                }
+
+                /* Custom Scrollbar Styles */
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 8px;
+                    height: 8px;
+                }
+
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: #4a5568; /* Tailwind gray-700 */
+                    border-radius: 10px;
+                }
+
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background: #6b7280; /* Tailwind gray-600 */
+                    border-radius: 10px;
+                }
+
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: #9ca3af; /* Tailwind gray-400 */
+                }
+
+                /* Basic fade-in animation for messages and sections */
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                .animate-fade-in {
+                    animation: fadeIn 0.5s ease-out forwards;
+                }
+                @keyframes fadeInDown {
+                    from { opacity: 0; transform: translateY(-20px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                .animate-fade-in-down {
+                    animation: fadeInDown 0.7s ease-out forwards;
+                }
+                `}
+            </style>
+            <Router>
+                <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-gray-100 font-inter flex flex-col items-center p-4">
+                    <Routes>
+                        <Route path="/" element={<HomePage />} />
+                        <Route path="/room/:roomId" element={<RoomPage />} />
+                    </Routes>
+                    <footer className="mt-auto py-4 text-center text-gray-400 text-sm">
+                        Developed by Oussama SEBROU
+                    </footer>
+                </div>
+            </Router>
+        </>
     );
 }
 
@@ -50,21 +101,26 @@ function HomePage() {
             return;
         }
 
+        // Initialize socket if not already done
         if (!socket) {
             socket = io(SERVER_URL);
         }
 
+        // Emit 'create_room' event to the server
         socket.emit('create_room', { username, videoUrl });
 
+        // Listen for 'room_created' event from the server
         socket.on('room_created', (roomId) => {
             console.log(`Room created: ${roomId}`);
             setSuccessMessage(`Room created! Share this link: ${window.location.origin}/room/${roomId}`);
+            // Navigate to the room page, passing necessary state
             navigate(`/room/${roomId}`, { state: { username: username, videoUrl: videoUrl, isHost: true } });
         });
 
+        // Listen for general error messages from the server
         socket.on('error_message', (msg) => {
             setError(msg);
-            setTimeout(() => setError(''), 3000);
+            setTimeout(() => setError(''), 3000); // Clear error after 3 seconds
         });
     };
 
@@ -78,10 +134,12 @@ function HomePage() {
             return;
         }
 
+        // Initialize socket if not already done
         if (!socket) {
             socket = io(SERVER_URL);
         }
 
+        // Navigate to the room page, passing necessary state for joining
         navigate(`/room/${joinRoomId}`, { state: { username: username, isHost: false } });
     };
 
@@ -108,6 +166,14 @@ function HomePage() {
                         className="w-full p-4 mb-4 rounded-xl bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-200 placeholder-gray-400 text-lg"
                         value={videoUrl}
                         onChange={(e) => { setVideoUrl(e.target.value); setError(''); setSuccessMessage(''); }}
+                    />
+                    {/* Username input for creating a room */}
+                    <input
+                        type="text"
+                        placeholder="Your Username"
+                        className="w-full p-4 mb-4 rounded-xl bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-200 placeholder-gray-400 text-lg"
+                        value={username}
+                        onChange={(e) => { setUsername(e.target.value); setError(''); setSuccessMessage(''); }}
                     />
                     <button
                         onClick={handleCreateRoom}
@@ -161,15 +227,36 @@ function HomePage() {
                             document.body.appendChild(tempTextArea);
                             tempTextArea.select();
                             try {
+                                // Using document.execCommand('copy') as navigator.clipboard.writeText() might be restricted in iframes
                                 const successful = document.execCommand('copy');
                                 if (successful) {
-                                    alert('Room link copied to clipboard!');
+                                    // Using a custom message box instead of alert()
+                                    // You would replace this with a more sophisticated modal if needed
+                                    const messageBox = document.createElement('div');
+                                    messageBox.textContent = 'Room link copied to clipboard!';
+                                    messageBox.style.cssText = `
+                                        position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+                                        background-color: #22c55e; color: white; padding: 10px 20px;
+                                        border-radius: 8px; z-index: 1000; font-size: 1rem;
+                                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                                    `;
+                                    document.body.appendChild(messageBox);
+                                    setTimeout(() => document.body.removeChild(messageBox), 2000);
                                 } else {
                                     throw new Error('Copy command failed.');
                                 }
                             } catch (err) {
                                 console.error('Failed to copy text: ', err);
-                                alert('Failed to copy link. Please copy it manually.');
+                                const messageBox = document.createElement('div');
+                                messageBox.textContent = 'Failed to copy link. Please copy it manually.';
+                                messageBox.style.cssText = `
+                                    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+                                    background-color: #dc2626; color: white; padding: 10px 20px;
+                                    border-radius: 8px; z-index: 1000; font-size: 1rem;
+                                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                                `;
+                                document.body.appendChild(messageBox);
+                                setTimeout(() => document.body.removeChild(messageBox), 3000);
                             } finally {
                                 document.body.removeChild(tempTextArea);
                             }
@@ -190,8 +277,9 @@ function RoomPage() {
     const location = useLocation();
     const navigate = useNavigate();
     const playerRef = useRef(null); // Ref for the ReactPlayer component
-    const chatMessagesEndRef = useRef(null);
+    const chatMessagesEndRef = useRef(null); // Ref for auto-scrolling chat
 
+    // State variables
     const [username, setUsername] = useState(location.state?.username || '');
     const [isHost, setIsHost] = useState(location.state?.isHost || false);
     const [videoUrl, setVideoUrl] = useState(location.state?.videoUrl || '');
@@ -207,22 +295,27 @@ function RoomPage() {
 
     // Effect to handle socket connection and events
     useEffect(() => {
+        // If username is not set, show the modal to get it
         if (!username) {
             setShowUsernameModal(true);
             return;
         }
 
+        // Initialize socket if not already done
         if (!socket) {
             socket = io(SERVER_URL);
         }
 
+        // Host specific actions upon entering the room
         if (isHost) {
             if (!videoUrl) {
-                setStatusMessage('Host needs a video URL to create a room. Please go back to home.');
+                setStatusMessage('Host needs a video URL to create a room. Please go back to home or set one.');
                 return;
             }
+            // If host, attempt to create a room with the provided video URL
             socket.emit('create_room', { username, videoUrl });
         } else {
+            // If not host, send a join request
             socket.emit('join_request', { roomId, username });
         }
 
@@ -231,12 +324,13 @@ function RoomPage() {
 
         socket.on('join_approved', (data) => {
             console.log('Join approved!', data);
-            setVideoUrl(data.videoUrl);
-            setIsPlaying(data.videoState.playing);
-            setCurrentTime(data.videoState.currentTime);
-            setUsersInRoom(data.users);
-            setStatusMessage('');
-            // Manually seek player if it exists
+            setVideoUrl(data.videoUrl); // Set video URL received from host
+            setIsPlaying(data.videoState.playing); // Sync play/pause state
+            setCurrentTime(data.videoState.currentTime); // Sync current time
+            setUsersInRoom(data.users); // Update user list
+            setStatusMessage(''); // Clear any pending messages
+
+            // Manually seek player to the synced time if player is ready
             if (playerRef.current) {
                 playerRef.current.seekTo(data.videoState.currentTime, 'seconds');
             }
@@ -245,32 +339,39 @@ function RoomPage() {
         socket.on('join_rejected', (reason) => {
             console.log('Join rejected:', reason);
             setStatusMessage(`Join rejected: ${reason}. Redirecting to home...`);
-            socket.disconnect();
-            setTimeout(() => navigate('/'), 3000);
+            socket.disconnect(); // Disconnect socket on rejection
+            setTimeout(() => navigate('/'), 3000); // Redirect to home after 3 seconds
         });
 
-        socket.on('join_pending', (message) => { setStatusMessage(message); });
+        socket.on('join_pending', (message) => {
+            setStatusMessage(message); // Show pending message for joining users
+        });
 
         socket.on('new_join_request', ({ requesterSocketId, username }) => {
+            // Add new join request to pending requests list (host only)
             setPendingRequests(prev => [...prev, { requesterSocketId, username }]);
             console.log(`New join request from ${username} (${requesterSocketId})`);
         });
 
         socket.on('room_data_update', (data) => {
+            // Update room data (users, pending requests)
             if (data.users) setUsersInRoom(data.users);
             if (data.pendingRequests) setPendingRequests(data.pendingRequests);
         });
 
         socket.on('video_sync', (state) => {
-            if (playerRef.current && !isHost) { // Only non-hosts update based on sync
+            // Only non-hosts update their player based on sync events
+            if (playerRef.current && !isHost) {
                 const player = playerRef.current;
                 const currentPlaybackTime = player.getCurrentTime();
 
                 // Sync if time difference is significant or play/pause state is different
+                // The condition player.getInternalPlayer().paused === state.playing ensures sync if local state is opposite of global state
                 if (Math.abs(currentPlaybackTime - state.currentTime) > 1 || player.getInternalPlayer().paused === state.playing) {
                     player.seekTo(state.currentTime, 'seconds');
                 }
 
+                // Adjust play/pause state
                 if (state.playing && player.getInternalPlayer().paused) {
                     setIsPlaying(true); // Triggers play
                 } else if (!state.playing && !player.getInternalPlayer().paused) {
@@ -281,6 +382,7 @@ function RoomPage() {
         });
 
         socket.on('video_url_updated', ({ videoUrl, videoState }) => {
+            // Update video URL and sync state when host changes it
             setVideoUrl(videoUrl);
             setIsPlaying(videoState.playing);
             setCurrentTime(videoState.currentTime);
@@ -289,27 +391,36 @@ function RoomPage() {
             }
         });
 
-        socket.on('chat_message', (msg) => { setChatMessages(prev => [...prev, msg]); });
+        socket.on('chat_message', (msg) => {
+            // Add new chat message to the state
+            setChatMessages(prev => [...prev, msg]);
+        });
 
         socket.on('user_joined', ({ username, socketId }) => {
+            // Add new user to the room list and post a system message
             setUsersInRoom(prev => [...prev, { username, socketId }]);
             setChatMessages(prev => [...prev, { username: 'System', message: `${username} joined the room.`, timestamp: Date.now() }]);
         });
 
         socket.on('user_left', ({ username }) => {
+            // Remove user from the room list and post a system message
             setUsersInRoom(prev => prev.filter(u => u.username !== username));
             setChatMessages(prev => [...prev, { username: 'System', message: `${username} left the room.`, timestamp: Date.now() }]);
         });
 
         socket.on('room_closed', (message) => {
             setStatusMessage(`${message} Redirecting to home...`);
-            socket.disconnect();
-            setTimeout(() => navigate('/'), 3000);
+            socket.disconnect(); // Disconnect socket on room closure
+            setTimeout(() => navigate('/'), 3000); // Redirect to home after 3 seconds
         });
 
-        socket.on('error_message', (msg) => { setStatusMessage(msg); setTimeout(() => setStatusMessage(''), 3000); });
+        socket.on('error_message', (msg) => {
+            setStatusMessage(msg);
+            setTimeout(() => setStatusMessage(''), 3000); // Clear error after 3 seconds
+        });
 
-        // Cleanup on unmount or dependency change
+        // Cleanup function for useEffect:
+        // Disconnects all socket listeners when component unmounts or dependencies change
         return () => {
             if (socket) {
                 socket.off('room_created');
@@ -325,108 +436,125 @@ function RoomPage() {
                 socket.off('user_left');
                 socket.off('room_closed');
                 socket.off('error_message');
+                // Note: We don't call socket.disconnect() here globally,
+                // as the socket might be reused by other components or states.
+                // Disconnect is handled specifically for room_closed or join_rejected.
             }
         };
-    }, [roomId, username, isHost, videoUrl, navigate]);
+    }, [roomId, username, isHost, navigate]); // Removed videoUrl from dependencies to prevent unnecessary re-runs on URL change within the room.
 
-    // Effect for auto-scrolling chat
+    // Effect for auto-scrolling chat messages to the bottom
     useEffect(() => { chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
 
 
     // Handlers for host actions, linked to ReactPlayer
+    // These functions are wrapped in useCallback to prevent unnecessary re-creation
+    // and optimize performance, especially with ReactPlayer callbacks.
+
     const handlePlayerProgress = useCallback((state) => {
         if (isHost && playerRef.current) {
             // Only send sync if playing to avoid excessive updates when paused
             // Also, only send if time has changed significantly to reduce network traffic
-            if (isPlaying && Math.abs(state.playedSeconds - currentTime) > 0.5) { // Sync if playing and time difference > 0.5s
+            if (isPlaying && Math.abs(state.playedSeconds - currentTime) > 0.5) {
                 socket.emit('video_sync', {
                     playing: isPlaying,
                     currentTime: state.playedSeconds
                 });
             }
-            setCurrentTime(state.playedSeconds);
+            setCurrentTime(state.playedSeconds); // Always update local current time
         }
-    }, [isHost, isPlaying, currentTime]);
+    }, [isHost, isPlaying, currentTime]); // Dependencies for useCallback
 
     const handlePlayerPlay = useCallback(() => {
         if (isHost) {
-            setIsPlaying(true);
+            setIsPlaying(true); // Update local state to playing
+            // Emit sync event to inform other clients
             socket.emit('video_sync', {
                 playing: true,
                 currentTime: playerRef.current ? playerRef.current.getCurrentTime() : currentTime
             });
         }
-    }, [isHost, currentTime]);
+    }, [isHost, currentTime]); // Dependencies for useCallback
 
     const handlePlayerPause = useCallback(() => {
         if (isHost) {
-            setIsPlaying(false);
+            setIsPlaying(false); // Update local state to paused
+            // Emit sync event to inform other clients
             socket.emit('video_sync', {
                 playing: false,
                 currentTime: playerRef.current ? playerRef.current.getCurrentTime() : currentTime
             });
         }
-    }, [isHost, currentTime]);
+    }, [isHost, currentTime]); // Dependencies for useCallback
 
-    const handlePlayerSeek = useCallback((newTime) => { // Changed 'e' to 'newTime' for clarity (expects seconds)
+    // This handler is not directly used by ReactPlayer controls but could be used for custom seek bars
+    const handlePlayerSeek = useCallback((newTime) => {
         if (isHost && playerRef.current) {
-            playerRef.current.seekTo(newTime, 'seconds'); // Explicitly seek
-            setIsPlaying(playerRef.current.props.playing); // Keep playing state as it was after seek
+            playerRef.current.seekTo(newTime, 'seconds'); // Explicitly seek the player
+            // Keep playing state as it was after seek, and emit sync
             socket.emit('video_sync', {
-                playing: playerRef.current.props.playing,
+                playing: isPlaying, // Use the current playing state
                 currentTime: newTime
             });
         }
-    }, [isHost]); // No need for currentTime here if newTime is passed directly
+    }, [isHost, isPlaying]); // Dependencies for useCallback
 
-
+    // Handler for sending chat messages
     const handleSendMessage = (e) => {
-        e.preventDefault();
+        e.preventDefault(); // Prevent form default submission
         if (newMessage.trim() && socket) {
-            socket.emit('chat_message', newMessage.trim());
-            setNewMessage('');
+            socket.emit('chat_message', newMessage.trim()); // Emit chat message to server
+            setNewMessage(''); // Clear input field
+            // Optimistically add message to local chat for immediate display
             setChatMessages(prev => [...prev, { username: username, message: newMessage.trim(), timestamp: Date.now() }]);
         }
     };
 
+    // Handler for host to set a new video URL
     const handleSetVideoUrl = () => {
         const newUrl = prompt("Enter new video URL (e.g., YouTube, Vimeo, .mp4, etc.):");
         if (newUrl && isValidVideoUrl(newUrl)) {
             if (socket) {
-                socket.emit('set_video_url', { roomId, videoUrl: newUrl });
+                socket.emit('set_video_url', { roomId, videoUrl: newUrl }); // Emit event to server
             }
-        } else if (newUrl) {
+        } else if (newUrl) { // Only show error if user actually typed something invalid
             setStatusMessage('Invalid video URL provided.');
             setTimeout(() => setStatusMessage(''), 3000);
         }
     };
 
+    // Handler for the initial username modal submission
     const handleInitialUsernameSubmit = () => {
         if (username.trim()) {
-            setShowUsernameModal(false);
+            setShowUsernameModal(false); // Close modal
+            // Re-trigger useEffect to connect to socket now that username is set
+            // The useEffect will automatically check the username state
+            // and proceed with 'join_request' or 'create_room'
         } else {
             setStatusMessage('Please enter a username to join.');
         }
     };
 
-    // New functions for handling join requests
+    // Host: Approve join request
     const handleApproveJoin = (requesterSocketId) => {
         if (socket && isHost) {
             socket.emit('approve_join', { roomId, requesterSocketId });
-            // Removed optimistic update: setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId));
-            // The pendingRequests state will now be updated by the 'room_data_update' event from the server.
+            // Remove from pending requests immediately in UI
+            setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId));
         }
     };
 
+    // Host: Reject join request
     const handleRejectJoin = (requesterSocketId) => {
         if (socket && isHost) {
             socket.emit('reject_join', { roomId, requesterSocketId });
-            // Removed optimistic update: setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId));
-            // The pendingRequests state will now be updated by the 'room_data_update' event from the server.
+            // Remove from pending requests immediately in UI
+            setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId));
         }
     };
 
 
+    // Conditional rendering for username input modal
     if (showUsernameModal) {
         return (
             <div className="fixed inset-0 bg-gray-900 bg-opacity-95 flex items-center justify-center z-50 p-4">
@@ -438,6 +566,7 @@ function RoomPage() {
                         className="w-full p-3 rounded-xl bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-200 placeholder-gray-400"
                         value={username}
                         onChange={(e) => { setUsername(e.target.value); setStatusMessage(''); }}
+                        onKeyPress={(e) => { if (e.key === 'Enter') handleInitialUsernameSubmit(); }}
                     />
                     <button
                         onClick={handleInitialUsernameSubmit}
@@ -453,6 +582,7 @@ function RoomPage() {
         );
     }
 
+    // Conditional rendering for status messages (e.g., join pending, rejected)
     if (statusMessage) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-6rem)] text-center animate-fade-in px-4">
@@ -469,6 +599,7 @@ function RoomPage() {
         );
     }
 
+    // Conditional rendering when video URL is not set (especially for host)
     if (!videoUrl && !isHost) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-6rem)] text-center animate-fade-in px-4">
@@ -509,7 +640,6 @@ function RoomPage() {
                         onPlay={handlePlayerPlay}
                         onPause={handlePlayerPause}
                         onProgress={handlePlayerProgress}
-                        // onSeek callback for manual seek from native controls, react-player will call onProgress after seek
                         onEnded={() => setIsPlaying(false)} // Stop playing when video ends
                         width="100%"
                         height="100%"
@@ -524,11 +654,9 @@ function RoomPage() {
                                     autoplay: 0,
                                 }
                             },
-                            // Add other platforms if needed, e.g., vimeo, dailymotion
                             vimeo: {
                                 playerOptions: {
                                     controls: isHost ? 1 : 0,
-                                    // other Vimeo options
                                 }
                             }
                         }}
@@ -632,10 +760,26 @@ function RoomPage() {
                 <h3 className="text-2xl font-semibold text-gray-300 mb-4">Users in Room ({usersInRoom.length})</h3>
                 <ul className="bg-gray-700 rounded-xl p-4 max-h-48 overflow-y-auto custom-scrollbar border border-gray-600 shadow-inner">
                     {usersInRoom.map((user, index) => (
-                        <li key={index} className="flex items-center text-gray-200 mb-2 p-1">
+                        <li key={index} className="flex flex-wrap items-center text-gray-200 mb-2 p-1">
                             <span className={`inline-block w-3 h-3 rounded-full mr-3 ${isHost && user.socketId === socket?.id ? 'bg-indigo-400' : 'bg-green-400'}`}></span>
                             <span className="font-medium">{user.username}</span>
+                            {/* Display full socketId as the "user ID" for this context */}
+                            <span className="text-gray-500 ml-2 text-xs break-all">(ID: {user.socketId})</span>
                             {/* Check if the current user (this client) is the host */}
                             {isHost && user.socketId === socket?.id && <span className="text-purple-400 ml-2 text-sm">(Host, You)</span>}
                             {/* Check if this is the current client (but not the host, as handled above) */}
-                            {!is
+                            {!isHost && user.socketId === socket?.id && <span className="text-gray-400 ml-2 text-sm">(You)</span>}
+                            {/* If the current client is the host, mark the user in the list with matching socketId as (Host) */}
+                            {isHost && user.socketId === usersInRoom.find(u => u.isHost)?.socketId && user.socketId !== socket?.id && (
+                                <span className="text-purple-400 ml-2 text-sm">(Host)</span>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </div>
+    );
+}
+
+export default App;
+
