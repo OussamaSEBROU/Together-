@@ -1,27 +1,21 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
 import io from 'socket.io-client';
+import ReactPlayer from 'react-player'; // Import react-player
 import { PlayCircleIcon, PauseCircleIcon, PaperAirplaneIcon, UserPlusIcon, XCircleIcon, CheckCircleIcon, LinkIcon, VideoCameraIcon, UsersIcon } from '@heroicons/react/24/solid';
 
 // Define the backend server URL.
-// In a production environment (like Render.com), process.env.REACT_APP_SERVER_URL will be injected.
-// For local development, it defaults to http://localhost:3001.
 const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:3001';
 
-// Global Socket.io instance to ensure it's managed correctly
-// Use a ref to hold the socket instance across renders
 let socket;
 
-// Helper function to validate video URLs
+// We'll make isValidVideoUrl more lenient now as react-player handles many formats
 const isValidVideoUrl = (url) => {
-    try {
-        const urlObj = new URL(url);
-        // Basic check for common video file extensions
-        return /\.(mp4|webm|ogg|mov|avi|flv|mkv)$/i.test(urlObj.pathname);
-    } catch (e) {
-        return false;
-    }
+    // React-player handles many formats, so we just need a basic URL validation now.
+    // It will return false for obviously invalid URLs.
+    return ReactPlayer.canPlay(url);
 };
+
 
 function App() {
     return (
@@ -53,8 +47,9 @@ function HomePage() {
             setError('Please enter a username.');
             return;
         }
+        // Use the updated isValidVideoUrl which leverages react-player's capability
         if (!isValidVideoUrl(videoUrl)) {
-            setError('Please enter a valid direct video link (e.g., .mp4).');
+            setError('Please enter a valid video link (e.g., YouTube, .mp4, etc.).');
             return;
         }
 
@@ -115,15 +110,8 @@ function HomePage() {
                     </h2>
                     <input
                         type="text"
-                        placeholder="Your Username"
+                        placeholder="Video Link (e.g., YouTube, .mp4, etc.)"
                         className="w-full p-4 mb-4 rounded-xl bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-200 placeholder-gray-400 text-lg"
-                        value={username}
-                        onChange={(e) => { setUsername(e.target.value); setError(''); setSuccessMessage(''); }}
-                    />
-                    <input
-                        type="text"
-                        placeholder="Direct Video Link (.mp4, .webm, etc.)"
-                        className="w-full p-4 mb-6 rounded-xl bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-200 placeholder-gray-400 text-lg"
                         value={videoUrl}
                         onChange={(e) => { setVideoUrl(e.target.value); setError(''); setSuccessMessage(''); }}
                     />
@@ -174,14 +162,12 @@ function HomePage() {
                     <button
                         onClick={() => {
                             const roomLink = `${window.location.origin}/room/${successMessage.split(': ').pop()}`;
-                            // Use document.execCommand for clipboard copy for broader compatibility, especially in iframes
-                            // Create a temporary textarea element to hold the text to copy
                             const tempTextArea = document.createElement('textarea');
                             tempTextArea.value = roomLink;
                             document.body.appendChild(tempTextArea);
-                            tempTextArea.select(); // Select the text
+                            tempTextArea.select();
                             try {
-                                const successful = document.execCommand('copy'); // Execute the copy command
+                                const successful = document.execCommand('copy');
                                 if (successful) {
                                     alert('Room link copied to clipboard!');
                                 } else {
@@ -191,7 +177,7 @@ function HomePage() {
                                 console.error('Failed to copy text: ', err);
                                 alert('Failed to copy link. Please copy it manually.');
                             } finally {
-                                document.body.removeChild(tempTextArea); // Clean up the temporary element
+                                document.body.removeChild(tempTextArea);
                             }
                         }}
                         className="bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg flex items-center gap-2 text-base transition duration-300 ease-in-out transform hover:scale-105"
@@ -209,8 +195,7 @@ function RoomPage() {
     const { roomId } = useParams();
     const location = useLocation();
     const navigate = useNavigate();
-    const videoRef = useRef(null);
-    const chatMessagesEndRef = useRef(null); // Ref for auto-scrolling chat
+    const playerRef = useRef(null); // Use a ref for the ReactPlayer component
 
     const [username, setUsername] = useState(location.state?.username || '');
     const [isHost, setIsHost] = useState(location.state?.isHost || false);
@@ -219,10 +204,10 @@ function RoomPage() {
     const [currentTime, setCurrentTime] = useState(0);
     const [chatMessages, setChatMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
-    const [usersInRoom, setUsersInRoom] = useState([]); // { socketId, username }
-    const [pendingRequests, setPendingRequests] = useState([]); // { requesterSocketId, username }
-    const [statusMessage, setStatusMessage] = useState(''); // Messages like "Join request pending" or "Room closed"
-    const [showUsernameModal, setShowUsernameModal] = useState(false); // For users who navigated directly
+    const [usersInRoom, setUsersInRoom] = useState([]);
+    const [pendingRequests, setPendingRequests] = useState([]);
+    const [statusMessage, setStatusMessage] = useState('');
+    const [showUsernameModal, setShowUsernameModal] = useState(false);
 
     // Effect to handle socket connection and events
     useEffect(() => {
@@ -231,14 +216,12 @@ function RoomPage() {
             return;
         }
 
-        // Initialize socket if not already initialized
         if (!socket) {
             socket = io(SERVER_URL);
         }
 
-        // Emit join request or create room if host
         if (isHost) {
-            if (!videoUrl) { // If host navigated back to room without videoUrl state
+            if (!videoUrl) {
                 setStatusMessage('Host needs a video URL to create a room. Please go back to home.');
                 return;
             }
@@ -248,11 +231,7 @@ function RoomPage() {
         }
 
         // --- Socket Event Listeners ---
-
-        socket.on('room_created', (id) => {
-            console.log('Host: Room created with ID', id);
-            // navigate will handle updating the URL in HomePage
-        });
+        socket.on('room_created', (id) => { console.log('Host: Room created with ID', id); });
 
         socket.on('join_approved', (data) => {
             console.log('Join approved!', data);
@@ -260,7 +239,11 @@ function RoomPage() {
             setIsPlaying(data.videoState.playing);
             setCurrentTime(data.videoState.currentTime);
             setUsersInRoom(data.users);
-            setStatusMessage(''); // Clear any pending message
+            setStatusMessage('');
+            // Manually seek player if it exists
+            if (playerRef.current) {
+                playerRef.current.seekTo(data.videoState.currentTime, 'seconds');
+            }
         });
 
         socket.on('join_rejected', (reason) => {
@@ -270,9 +253,7 @@ function RoomPage() {
             setTimeout(() => navigate('/'), 3000);
         });
 
-        socket.on('join_pending', (message) => {
-            setStatusMessage(message);
-        });
+        socket.on('join_pending', (message) => { setStatusMessage(message); });
 
         socket.on('new_join_request', ({ requesterSocketId, username }) => {
             setPendingRequests(prev => [...prev, { requesterSocketId, username }]);
@@ -280,24 +261,25 @@ function RoomPage() {
         });
 
         socket.on('room_data_update', (data) => {
-            // Update specific parts of room data (e.g., users, pending requests)
             if (data.users) setUsersInRoom(data.users);
             if (data.pendingRequests) setPendingRequests(data.pendingRequests);
         });
 
         socket.on('video_sync', (state) => {
-            if (videoRef.current && !isHost) { // Only non-hosts update based on sync
-                const video = videoRef.current;
-                if (Math.abs(video.currentTime - state.currentTime) > 1 || // Sync if time difference > 1 second
-                    video.paused === state.playing) { // Sync if play/pause state is different
-                    video.currentTime = state.currentTime;
+            if (playerRef.current && !isHost) { // Only non-hosts update based on sync
+                const player = playerRef.current;
+                const currentPlaybackTime = player.getCurrentTime();
+
+                // Sync if time difference is significant or play/pause state is different
+                if (Math.abs(currentPlaybackTime - state.currentTime) > 1 || player.getInternalPlayer().paused === state.playing) {
+                    player.seekTo(state.currentTime, 'seconds');
                 }
-                if (state.playing) {
-                    video.play().catch(e => console.error("Error playing video:", e));
-                } else {
-                    video.pause();
+
+                if (state.playing && player.getInternalPlayer().paused) {
+                    setIsPlaying(true); // Triggers play
+                } else if (!state.playing && !player.getInternalPlayer().paused) {
+                    setIsPlaying(false); // Triggers pause
                 }
-                setIsPlaying(state.playing);
                 setCurrentTime(state.currentTime);
             }
         });
@@ -306,47 +288,33 @@ function RoomPage() {
             setVideoUrl(videoUrl);
             setIsPlaying(videoState.playing);
             setCurrentTime(videoState.currentTime);
-            if (videoRef.current) {
-                videoRef.current.load(); // Reload video with new URL
-                videoRef.current.currentTime = videoState.currentTime;
-                if (videoState.playing) {
-                    videoRef.current.play().catch(e => console.error("Error playing video:", e));
-                } else {
-                    videoRef.current.pause();
-                }
+            if (playerRef.current) {
+                playerRef.current.seekTo(videoState.currentTime, 'seconds');
             }
         });
 
-        socket.on('chat_message', (msg) => {
-            setChatMessages(prev => [...prev, msg]);
-        });
+        socket.on('chat_message', (msg) => { setChatMessages(prev => [...prev, msg]); });
 
         socket.on('user_joined', ({ username, socketId }) => {
             setUsersInRoom(prev => [...prev, { username, socketId }]);
-            // Corrected and complete line here:
             setChatMessages(prev => [...prev, { username: 'System', message: `${username} joined the room.`, timestamp: Date.now() }]);
         });
 
         socket.on('user_left', ({ username }) => {
-            setUsersInRoom(prev => prev.filter(u => u.username !== username)); // Filter by username as socketId might be old
-            // Corrected and complete line here:
+            setUsersInRoom(prev => prev.filter(u => u.username !== username));
             setChatMessages(prev => [...prev, { username: 'System', message: `${username} left the room.`, timestamp: Date.now() }]);
         });
 
         socket.on('room_closed', (message) => {
             setStatusMessage(`${message} Redirecting to home...`);
-            socket.disconnect(); // Ensure socket is disconnected
+            socket.disconnect();
             setTimeout(() => navigate('/'), 3000);
         });
 
-        socket.on('error_message', (msg) => {
-            setStatusMessage(msg);
-            setTimeout(() => setStatusMessage(''), 3000); // Clear error after 3 seconds
-        });
+        socket.on('error_message', (msg) => { setStatusMessage(msg); setTimeout(() => setStatusMessage(''), 3000); });
 
         // Cleanup on unmount or dependency change
         return () => {
-            console.log('Cleaning up socket listeners and disconnecting...');
             if (socket) {
                 socket.off('room_created');
                 socket.off('join_approved');
@@ -361,71 +329,75 @@ function RoomPage() {
                 socket.off('user_left');
                 socket.off('room_closed');
                 socket.off('error_message');
-                // Do NOT disconnect socket here if you want to reuse it.
-                // Let the 'disconnect' event on the server handle if the browser tab closes.
-                // For manual leaving, we might disconnect.
             }
         };
-    }, [roomId, username, isHost, videoUrl, navigate]); // Rerun if these initial states change
+    }, [roomId, username, isHost, videoUrl, navigate]);
 
     // Effect for auto-scrolling chat
-    useEffect(() => {
-        chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [chatMessages]);
+    const chatMessagesEndRef = useRef(null);
+    useEffect(() => { chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
 
-    // Effect for video event listeners
-    useEffect(() => {
-        const video = videoRef.current;
-        if (!video || !isHost) return; // Only host sends sync events
 
-        const sendSync = () => {
+    // Handlers for host actions, linked to ReactPlayer
+    const handlePlayerProgress = useCallback((state) => {
+        if (isHost && playerRef.current) {
+            // Only send sync if playing to avoid excessive updates when paused
+            if (isPlaying) {
+                socket.emit('video_sync', {
+                    playing: isPlaying,
+                    currentTime: state.playedSeconds
+                });
+            }
+            setCurrentTime(state.playedSeconds);
+        }
+    }, [isHost, isPlaying]);
+
+    const handlePlayerPlay = useCallback(() => {
+        if (isHost) {
+            setIsPlaying(true);
             socket.emit('video_sync', {
-                playing: !video.paused,
-                currentTime: video.currentTime
+                playing: true,
+                currentTime: playerRef.current ? playerRef.current.getCurrentTime() : currentTime
             });
-        };
-
-        // Attach listeners for host's video actions
-        video.addEventListener('play', sendSync);
-        video.addEventListener('pause', sendSync);
-        video.addEventListener('seeked', sendSync);
-
-        // Cleanup listeners
-        return () => {
-            video.removeEventListener('play', sendSync);
-            video.removeEventListener('pause', sendSync);
-            video.removeEventListener('seeked', sendSync);
-        };
-    }, [isHost]); // Re-attach if host status changes
-
-    // Handlers for host actions
-    const handleApproveJoin = (requesterSocketId) => {
-        if (socket) {
-            socket.emit('approve_join', { roomId, requesterSocketId });
-            setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId)); // Optimistic UI update
         }
-    };
+    }, [isHost, currentTime]);
 
-    const handleRejectJoin = (requesterSocketId) => {
-        if (socket) {
-            socket.emit('reject_join', { roomId, requesterSocketId });
-            setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId)); // Optimistic UI update
+    const handlePlayerPause = useCallback(() => {
+        if (isHost) {
+            setIsPlaying(false);
+            socket.emit('video_sync', {
+                playing: false,
+                currentTime: playerRef.current ? playerRef.current.getCurrentTime() : currentTime
+            });
         }
-    };
+    }, [isHost, currentTime]);
+
+    const handlePlayerSeek = useCallback((e) => {
+        if (isHost) {
+            const seekToTime = e.target.value; // For input type range
+            // OR if using the native controls or react-player's onProgress which gives full state:
+            // const seekToTime = playerRef.current.getCurrentTime(); // Get exact time after seek
+            setIsPlaying(playerRef.current ? !playerRef.current.getInternalPlayer().paused : false); // Update playing state
+            socket.emit('video_sync', {
+                playing: playerRef.current ? !playerRef.current.getInternalPlayer().paused : false,
+                currentTime: playerRef.current ? playerRef.current.getCurrentTime() : currentTime
+            });
+        }
+    }, [isHost, currentTime]);
+
 
     const handleSendMessage = (e) => {
         e.preventDefault();
         if (newMessage.trim() && socket) {
             socket.emit('chat_message', newMessage.trim());
             setNewMessage('');
-            // Optimistic UI update for chat
             setChatMessages(prev => [...prev, { username: username, message: newMessage.trim(), timestamp: Date.now() }]);
         }
     };
 
     const handleSetVideoUrl = () => {
-        const newUrl = prompt("Enter new direct video URL:");
-        if (newUrl && isValidVideoUrl(newUrl)) {
+        const newUrl = prompt("Enter new video URL (e.g., YouTube, .mp4, etc.):");
+        if (newUrl && isValidVideoUrl(newUrl)) { // Use updated isValidVideoUrl
             if (socket) {
                 socket.emit('set_video_url', { roomId, videoUrl: newUrl });
             }
@@ -438,9 +410,6 @@ function RoomPage() {
     const handleInitialUsernameSubmit = () => {
         if (username.trim()) {
             setShowUsernameModal(false);
-            // Re-trigger the main useEffect to connect socket and join
-            // This is a bit of a hack; ideally, you'd have a more robust initial connection flow
-            // For now, it will work because the dependencies (username) will change.
         } else {
             setStatusMessage('Please enter a username to join.');
         }
@@ -488,7 +457,6 @@ function RoomPage() {
         );
     }
 
-    // Conditional render for non-host waiting for videoUrl
     if (!videoUrl && !isHost) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-6rem)] text-center animate-fade-in px-4">
@@ -498,7 +466,6 @@ function RoomPage() {
             </div>
         );
     }
-    // Conditional render for host to set videoUrl
     if (!videoUrl && isHost) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-6rem)] text-center animate-fade-in px-4">
@@ -522,37 +489,41 @@ function RoomPage() {
             <div className="flex-1 flex flex-col items-center bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-700">
                 <h2 className="text-2xl font-semibold text-gray-300 mb-4">Room ID: <span className="text-indigo-400">{roomId}</span></h2>
                 <div className="relative w-full max-w-4xl bg-black rounded-lg overflow-hidden shadow-2xl aspect-video">
-                    <video
-                        ref={videoRef}
-                        src={videoUrl}
-                        className="w-full h-full object-contain"
-                        controls={isHost} // Only host has controls
-                        onPlay={() => { if (isHost) setIsPlaying(true); }}
-                        onPause={() => { if (isHost) setIsPlaying(false); }}
-                        onSeeked={() => { if (isHost) setIsPlaying(false); }} // Set to pause or send current state
-                        onLoadedMetadata={() => {
-                            if (isHost && videoRef.current) {
-                                // Ensure host's video state matches initial server state if it's a new load
-                                socket.emit('video_sync', {
-                                    playing: isPlaying,
-                                    currentTime: currentTime
-                                });
+                    <ReactPlayer
+                        ref={playerRef}
+                        url={videoUrl}
+                        playing={isPlaying}
+                        controls={false} // ReactPlayer handles its own controls internally, we use custom ones
+                        onPlay={handlePlayerPlay}
+                        onPause={handlePlayerPause}
+                        onProgress={handlePlayerProgress} // Continuously get progress for host sync
+                        onSeek={handlePlayerSeek} // For manual seeking events by host
+                        width="100%"
+                        height="100%"
+                        style={{ position: 'absolute', top: 0, left: 0 }}
+                        config={{
+                            youtube: {
+                                playerVars: {
+                                    controls: isHost ? 1 : 0, // Show YouTube's native controls only for host
+                                    modestbranding: 1, // Hide YouTube logo for a cleaner look
+                                    showinfo: 0, // Hide video title and uploader info
+                                    rel: 0, // Prevent related videos at end
+                                    autoplay: 0, // Controlled by 'playing' prop
+                                }
                             }
                         }}
-                    >
-                        Your browser does not support the video tag.
-                    </video>
+                    />
                     {isHost && (
-                         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4 bg-gray-900 bg-opacity-70 p-3 rounded-full shadow-lg">
+                         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4 bg-gray-900 bg-opacity-70 p-3 rounded-full shadow-lg z-10">
                             <button
-                                onClick={() => videoRef.current.play()}
+                                onClick={handlePlayerPlay}
                                 className="p-3 bg-indigo-600 rounded-full hover:bg-indigo-700 transition duration-200 transform hover:scale-110 shadow-lg"
                                 title="Play"
                             >
                                 <PlayCircleIcon className="h-8 w-8 text-white" />
                             </button>
                             <button
-                                onClick={() => videoRef.current.pause()}
+                                onClick={handlePlayerPause}
                                 className="p-3 bg-indigo-600 rounded-full hover:bg-indigo-700 transition duration-200 transform hover:scale-110 shadow-lg"
                                 title="Pause"
                             >
