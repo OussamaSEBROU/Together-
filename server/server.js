@@ -65,6 +65,7 @@ io.on('connection', (socket) => {
                 users: room.users,
                 messages: room.messages // Crucial: Send existing chat messages
             });
+            console.log(`[JOIN_REQUEST] Directly approved ${username} (${socket.id}). Sending chat history (count: ${room.messages.length}):`, room.messages.map(m => m.message));
             io.to(roomId).emit('room_data_update', { users: room.users, pendingRequests: room.pendingRequests });
             return;
         }
@@ -113,7 +114,8 @@ io.on('connection', (socket) => {
             users: room.users, // Send updated user list
             messages: room.messages // Crucial: Send existing chat messages to new user
         });
-        console.log(`[APPROVE_JOIN] Sent 'join_approved' to ${requesterSocketId} for room ${roomId}.`);
+        console.log(`[APPROVE_JOIN] Sent 'join_approved' to ${requesterSocketId} for room ${roomId}. Sending chat history (count: ${room.messages.length}):`, room.messages.map(m => m.message));
+
 
         // Inform all existing users in the room (including host) about the new user
         io.to(roomId).emit('user_joined', { username: username, socketId: requesterSocketId });
@@ -144,7 +146,7 @@ io.on('connection', (socket) => {
         const { username } = room.pendingRequests.splice(requestIndex, 1)[0]; // Remove from pending
         io.to(requesterSocketId).emit('join_rejected', 'Host rejected your request.');
         console.log(`[REJECT_JOIN] Sent 'join_rejected' to ${requesterSocketId}.`);
-        io.to(room.hostId).emit('room_data_update', { users: room.users, pendingRequests: room.pendingRequests }); // Only update host
+        io.to(room.hostId).emit('room_data_update', { users: room.users, pendingRequests: room.pendingRequests }); // Only update host on rejection
         // Do not update other users with pending requests unless they need to know someone was rejected
     });
 
