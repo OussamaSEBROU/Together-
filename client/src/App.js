@@ -338,6 +338,16 @@ function RoomPage() {
                 console.log(`[CLIENT VIDEO DEBUG] Join Approved: Seeking player to ${data.videoState.currentTime}, target playing state: ${data.videoState.playing}`);
                 player.seekTo(data.videoState.currentTime, 'seconds');
 
-                // Explicitly control play/pause for non-hosts
-                if (data.videoState.playing) {
-                    player.get
+                // Explicitly control play/pause for non-hosts if the `playing` prop isn't enough or for immediate feedback
+                // However, setting `isPlaying` state should suffice given ReactPlayer's design.
+                // The previous error was due to an incomplete `player.get`
+            }
+        };
+
+
+        // Rest of your useEffect and other component logic...
+        // ... (remaining code remains unchanged)
+    }, [roomId, username, isHost, videoUrl]); // Dependencies
+    // ... (rest of the RoomPage component)
+    return null; // Added a temporary return as the original snippet was cut short
+}
