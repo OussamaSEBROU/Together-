@@ -29,19 +29,19 @@ io.on('connection', (socket) => {
     // Host: Create Room
     socket.on('create_room', ({ username, videoUrl }) => {
         const roomId = generateRoomId();
+        const hostDisplayName = `${username} - admin`; // Define host's display name
         rooms[roomId] = {
             hostId: socket.id,
             videoUrl: videoUrl,
             videoState: { playing: false, currentTime: 0 },
-            users: [{ id: socket.id, username: username, isHost: true }], // Host is initially the only user
+            users: [{ id: socket.id, username: hostDisplayName, isHost: true }], // Store display name for host
             messages: [],
             pendingRequests: []
         };
         socket.join(roomId);
         socket.emit('room_created', roomId);
-        io.to(roomId).emit('user_joined', { username: username, socketId: socket.id }); // Announce host joined
-        console.log(`[CREATE_ROOM] Room ${roomId} created by host ${username} (${socket.id}) with video ${videoUrl}`);
-        // Send initial room data to the host
+        io.to(roomId).emit('user_joined', { username: hostDisplayName, socketId: socket.id }); // Announce host joined
+        console.log(`[CREATE_ROOM] Room ${roomId} created by host ${hostDisplayName} (${socket.id}) with video ${videoUrl}`);
         io.to(roomId).emit('room_data_update', { users: rooms[roomId].users, pendingRequests: rooms[roomId].pendingRequests });
     });
 
@@ -55,7 +55,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Check if user is already in the room (e.g., refreshing page or re-connecting)
+        // Check if user is already in the room or has a pending request
         if (room.users.some(user => user.id === socket.id)) {
             console.log(`[JOIN_REQUEST] User ${username} (${socket.id}) already in room ${roomId}. Approving directly.`);
             socket.join(roomId); // Ensure they are still in the Socket.IO room
@@ -63,40 +63,29 @@ io.on('connection', (socket) => {
                 videoUrl: room.videoUrl,
                 videoState: room.videoState,
                 users: room.users,
-                messages: room.messages // Send existing chat messages to re-joining user
+                messages: room.messages // Crucial: Send existing chat messages
             });
-            // Still send room data update in case anything changed
             io.to(roomId).emit('room_data_update', { users: room.users, pendingRequests: room.pendingRequests });
             return;
         }
-
-        // Check if user is already in pending requests
         if (room.pendingRequests.some(req => req.requesterSocketId === socket.id)) {
             console.log(`[JOIN_REQUEST] User ${username} (${socket.id}) already has a pending request for room ${roomId}. Re-sending pending message.`);
             socket.emit('join_pending', 'Your join request is still pending host approval.');
             return;
         }
 
-        // Add to pending requests
         room.pendingRequests.push({ requesterSocketId: socket.id, username: username });
         socket.emit('join_pending', 'Your join request has been sent to the host. Please wait for approval.');
-        // Notify host of new request
         io.to(room.hostId).emit('new_join_request', { requesterSocketId: socket.id, username: username });
-        // Update all users in the room (including host) about new pending request
-        console.log(`[JOIN_REQUEST] New pending request from ${username} (${socket.id}) for room ${roomId}. Notifying host and room.`);
-        io.to(room.hostId).emit('room_data_update', { users: room.users, pendingRequests: room.pendingRequests });
+        console.log(`[JOIN_REQUEST] New pending request from ${username} (${socket.id}) for room ${roomId}. Notifying host.`);
+        io.to(room.hostId).emit('room_data_update', { users: room.users, pendingRequests: room.pendingRequests }); // Only update host on new request
     });
 
     // Host: Approve Join
     socket.on('approve_join', ({ roomId, requesterSocketId }) => {
         console.log(`[APPROVE_JOIN] Host (${socket.id}) attempting to approve ${requesterSocketId} for room ${roomId}`);
         const room = rooms[roomId];
-        if (!room) {
-            console.log(`[APPROVE_JOIN] Error: Room ${roomId} not found.`);
-            socket.emit('error_message', 'Room not found.');
-            return;
-        }
-        if (socket.id !== room.hostId) {
+        if (!room || socket.id !== room.hostId) {
             console.log(`[APPROVE_JOIN] Error: ${socket.id} is not host of room ${roomId}.`);
             socket.emit('error_message', 'You are not the host of this room.');
             return;
@@ -115,15 +104,14 @@ io.on('connection', (socket) => {
 
         // THIS IS CRUCIAL: Make the requester's socket join the specific Socket.IO room
         io.sockets.sockets.get(requesterSocketId)?.join(roomId);
-        console.log(`[APPROVE_JOIN] Socket ${requesterSocketId} explicitly joined room ${roomId}. Current rooms for socket:`, Array.from(io.sockets.sockets.get(requesterSocketId)?.rooms || []));
-
+        console.log(`[APPROVE_JOIN] Socket ${requesterSocketId} explicitly joined room ${roomId}.`);
 
         // Inform the newly approved user
         io.to(requesterSocketId).emit('join_approved', {
             videoUrl: room.videoUrl,
             videoState: room.videoState,
             users: room.users, // Send updated user list
-            messages: room.messages // Send existing chat messages
+            messages: room.messages // Crucial: Send existing chat messages to new user
         });
         console.log(`[APPROVE_JOIN] Sent 'join_approved' to ${requesterSocketId} for room ${roomId}.`);
 
@@ -156,8 +144,8 @@ io.on('connection', (socket) => {
         const { username } = room.pendingRequests.splice(requestIndex, 1)[0]; // Remove from pending
         io.to(requesterSocketId).emit('join_rejected', 'Host rejected your request.');
         console.log(`[REJECT_JOIN] Sent 'join_rejected' to ${requesterSocketId}.`);
-        io.to(roomId).emit('room_data_update', { users: room.users, pendingRequests: room.pendingRequests });
-        console.log(`[REJECT_JOIN] Broadcast 'room_data_update' to room ${roomId}.`);
+        io.to(room.hostId).emit('room_data_update', { users: room.users, pendingRequests: room.pendingRequests }); // Only update host on rejection
+        // Do not update other users with pending requests unless they need to know someone was rejected
     });
 
 
@@ -166,7 +154,7 @@ io.on('connection', (socket) => {
         const roomId = Object.keys(rooms).find(id => rooms[id].hostId === socket.id);
         if (roomId && rooms[roomId]) {
             rooms[roomId].videoState = state;
-            // Broadcast to all other users in the room except the host themselves
+            // Broadcast to all other users in the room (excluding the sender/host)
             socket.to(roomId).emit('video_sync', state);
             // console.log(`[VIDEO_SYNC] Room ${roomId}: Host ${socket.id} synced video state. Playing: ${state.playing}, Time: ${state.currentTime.toFixed(2)}`);
         }
@@ -196,7 +184,6 @@ io.on('connection', (socket) => {
 
     // Chat Message
     socket.on('chat_message', (message) => {
-        // Find the room the user is in based on their socket ID being in the users list of any room
         let roomId = null;
         let currentUser = null;
         for (const id in rooms) {
@@ -209,12 +196,14 @@ io.on('connection', (socket) => {
         }
 
         if (roomId && rooms[roomId] && currentUser) {
+            // Use the username from the stored user object (which includes '-admin' for host)
             const chatMsg = { username: currentUser.username, message: message, timestamp: Date.now() };
             rooms[roomId].messages.push(chatMsg); // Store message
             io.to(roomId).emit('chat_message', chatMsg); // Broadcast to all in room
             console.log(`[CHAT] Room ${roomId}: ${currentUser.username}: ${message}`);
         } else {
             console.log(`[CHAT] Error: Could not find room for socket ${socket.id} to send message.`);
+            socket.emit('error_message', 'Could not send message: Not in a valid room.');
         }
     });
 
@@ -229,7 +218,7 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('room_closed', 'Host disconnected. Room closed.');
                 console.log(`[DISCONNECT] Room ${roomId} closed due to host disconnection.`);
                 delete rooms[roomId];
-                return; // Exit as room is deleted
+                return;
             }
 
             // If disconnected user was a regular participant
@@ -239,24 +228,23 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('user_left', { username: disconnectedUser.username });
                 io.to(roomId).emit('room_data_update', { users: room.users, pendingRequests: room.pendingRequests });
                 console.log(`[DISCONNECT] User ${disconnectedUser.username} (${socket.id}) left room ${roomId}.`);
-                return; // Exit as user handled
+                return;
             }
 
             // If disconnected user had a pending request
             const pendingIndex = room.pendingRequests.findIndex(req => req.requesterSocketId === socket.id);
             if (pendingIndex !== -1) {
                 const [removedPending] = room.pendingRequests.splice(pendingIndex, 1);
-                io.to(roomId).emit('room_data_update', { users: room.users, pendingRequests: room.pendingRequests });
+                io.to(room.hostId).emit('room_data_update', { users: room.users, pendingRequests: room.pendingRequests }); // Only update host
                 console.log(`[DISCONNECT] Pending request from ${removedPending.username} (${socket.id}) for room ${roomId} cancelled.`);
-                return; // Exit as pending request handled
+                return;
             }
         }
     });
 });
 
-// Helper function to generate a simple room ID
 function generateRoomId() {
-    return Math.random().toString(36).substring(2, 9); // e.g., "g7f9j3k"
+    return Math.random().toString(36).substring(2, 9);
 }
 
 server.listen(PORT, () => {
