@@ -638,4 +638,15 @@ function RoomPage() {
                             {/* Check if this is the current client (but not the host, as handled above) */}
                             {!isHost && user.socketId === socket?.id && <span className="text-gray-400 ml-2 text-sm">(You)</span>}
                             {/* If the current client is the host, mark the user in the list with matching socketId as (Host) */}
-                            {isHost && user.socketId === usersInRoom.find
+                            {isHost && user.socketId === usersInRoom.find(u => u.socketId === socket?.id)?.socketId && user.socketId !== socket?.id && (
+                                <span className="text-purple-400 ml-2 text-sm">(Host)</span>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </div>
+    );
+}
+
+export default App;
