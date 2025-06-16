@@ -276,14 +276,15 @@ function RoomPage() {
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [chatMessages, setChatMessages] = useState([]);
-    const [newMessage, setNewMessage] = useState('');
     const [usersInRoom, setUsersInRoom] = useState([]);
+    const [newMessage, setNewMessage] = useState('');
     const [pendingRequests, setPendingRequests] = useState([]);
     const [statusMessage, setStatusMessage] = useState('');
     const [showUsernameModal, setShowUsernameModal] = useState(false);
 
     // Effect to handle socket connection and events
     useEffect(() => {
+        console.log(`[RoomPage Effect] Initializing for room: ${roomId}, user: ${username}, host: ${isHost}`);
         if (!username) {
             setShowUsernameModal(true);
             return;
@@ -291,18 +292,21 @@ function RoomPage() {
 
         if (!socket) {
             socket = io(SERVER_URL);
+            console.log("[RoomPage Effect] Socket initialized.");
         }
 
-        if (!isHost) {
-            socket.emit('join_request', { roomId, username });
-        } else {
-            // If host, room should have been created via HomePage.
-            // This ensures the socket is joined and host state is correct on refresh.
+        // Send initial join request or room creation for host
+        if (isHost) {
             if (!videoUrl) {
                 setStatusMessage('You are the host. Please set the video URL to start the session.');
+                console.log("[RoomPage Effect] Host is missing video URL, prompting.");
             } else {
+                console.log(`[RoomPage Effect] Host emitting 'create_room' with videoUrl: ${videoUrl}`);
                 socket.emit('create_room', { username, videoUrl });
             }
+        } else {
+            console.log(`[RoomPage Effect] Non-host emitting 'join_request' for room: ${roomId}`);
+            socket.emit('join_request', { roomId, username });
         }
 
 
@@ -310,15 +314,17 @@ function RoomPage() {
         socket.on('room_created', (id) => { console.log('Host: Room created with ID', id); });
 
         socket.on('join_approved', (data) => {
-            console.log('Join approved! Received data:', data); // Log the received data
+            console.log('Join approved! Received data:', data);
             setVideoUrl(data.videoUrl);
             setIsPlaying(data.videoState.playing);
             setCurrentTime(data.videoState.currentTime);
             setUsersInRoom(data.users);
             // *** FIX: Ensure chat messages are correctly set from data.messages ***
-            setChatMessages(data.messages || []);
+            setChatMessages(data.messages || []); // Set initial chat history
+            console.log("Chat messages after join_approved:", data.messages);
             setStatusMessage('');
             if (playerRef.current) {
+                console.log(`Seeking player to ${data.videoState.currentTime}`);
                 playerRef.current.seekTo(data.videoState.currentTime, 'seconds');
             }
         });
@@ -347,13 +353,17 @@ function RoomPage() {
                 const player = playerRef.current;
                 const currentPlaybackTime = player.getCurrentTime();
 
-                if (Math.abs(currentPlaybackTime - state.currentTime) > 1 || player.getInternalPlayer().paused !== state.playing) { // Fixed comparison
+                // Only sync if difference is significant or play/pause states mismatch
+                if (Math.abs(currentPlaybackTime - state.currentTime) > 1 || player.getInternalPlayer().paused !== !state.playing) { // !state.playing because getInternalPlayer().paused is true when paused
+                    console.log(`[Video Sync] Non-host seeking from ${currentPlaybackTime.toFixed(2)} to ${state.currentTime.toFixed(2)}. Playing: ${state.playing}`);
                     player.seekTo(state.currentTime, 'seconds');
                 }
 
                 if (state.playing && player.getInternalPlayer().paused) {
+                    console.log("[Video Sync] Non-host playing video.");
                     setIsPlaying(true);
                 } else if (!state.playing && !player.getInternalPlayer().paused) {
+                    console.log("[Video Sync] Non-host pausing video.");
                     setIsPlaying(false);
                 }
                 setCurrentTime(state.currentTime);
@@ -361,6 +371,7 @@ function RoomPage() {
         });
 
         socket.on('video_url_updated', ({ videoUrl, videoState }) => {
+            console.log(`[Video URL Updated] Setting new URL: ${videoUrl}`);
             setVideoUrl(videoUrl);
             setIsPlaying(videoState.playing);
             setCurrentTime(videoState.currentTime);
@@ -370,7 +381,12 @@ function RoomPage() {
         });
 
         socket.on('chat_message', (msg) => {
-            setChatMessages(prev => [...prev, msg]);
+            console.log("Received chat message:", msg);
+            setChatMessages(prev => {
+                const newChatMessages = [...prev, msg];
+                console.log("Current chat messages state:", newChatMessages);
+                return newChatMessages;
+            });
         });
 
         socket.on('user_joined', ({ username, socketId }) => {
@@ -394,7 +410,9 @@ function RoomPage() {
 
         socket.on('error_message', (msg) => { setStatusMessage(msg); setTimeout(() => setStatusMessage(''), 3000); });
 
+        // Cleanup function for useEffect:
         return () => {
+            console.log("[RoomPage Effect] Cleaning up socket listeners.");
             if (socket) {
                 socket.off('room_created');
                 socket.off('join_approved');
@@ -411,11 +429,17 @@ function RoomPage() {
                 socket.off('error_message');
             }
         };
-    }, [roomId, username, isHost, videoUrl, navigate]);
+    }, [roomId, username, isHost, navigate]); // *** FIX: Removed chatMessages from dependencies ***
 
-    useEffect(() => { chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
+    // Effect for auto-scrolling chat messages to the bottom
+    useEffect(() => {
+        if (chatMessagesEndRef.current) {
+            chatMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [chatMessages]);
 
 
+    // Handlers for host actions, wrapped in useCallback for performance
     const handlePlayerProgress = useCallback((state) => {
         if (isHost && isPlaying && Math.abs(state.playedSeconds - currentTime) > 0.5) {
             socket.emit('video_sync', {
@@ -423,7 +447,7 @@ function RoomPage() {
                 currentTime: state.playedSeconds
             });
         }
-        setCurrentTime(state.playedSeconds);
+        setCurrentTime(state.playedSeconds); // Always update local current time
     }, [isHost, isPlaying, currentTime]);
 
     const handlePlayerPlay = useCallback(() => {
@@ -446,25 +470,6 @@ function RoomPage() {
         }
     }, [isHost, currentTime]);
 
-    const handlePlayerSeek = useCallback((newTime) => {
-        if (isHost && playerRef.current) {
-            playerRef.current.seekTo(newTime, 'seconds');
-            socket.emit('video_sync', {
-                playing: isPlaying,
-                currentTime: newTime
-            });
-        }
-    }, [isHost, isPlaying]);
-
-
-    const handleSendMessage = (e) => {
-        e.preventDefault();
-        if (newMessage.trim() && socket) {
-            socket.emit('chat_message', newMessage.trim());
-            setNewMessage('');
-        }
-    };
-
     const handleSetVideoUrl = () => {
         const newUrl = prompt("Enter new video URL (e.g., YouTube, Vimeo, .mp4, etc.):");
         if (newUrl && isValidVideoUrl(newUrl)) {
@@ -477,12 +482,25 @@ function RoomPage() {
         }
     };
 
+    const handleSendMessage = (e) => {
+        e.preventDefault();
+        if (newMessage.trim() && socket) {
+            socket.emit('chat_message', newMessage.trim());
+            setNewMessage('');
+        }
+    };
+
     const handleInitialUsernameSubmit = () => {
         if (username.trim()) {
             setShowUsernameModal(false);
-            if (!isHost) {
+            // Re-trigger useEffect to connect to socket now that username is set
+            if (!socket) { // Ensure socket is created if not already
                  socket = io(SERVER_URL);
+            }
+            if (!isHost) { // Only send join_request if not host
                  socket.emit('join_request', { roomId, username });
+            } else if (isHost && videoUrl) { // If host and video already set, ensure room is created
+                socket.emit('create_room', { username, videoUrl });
             }
         } else {
             setStatusMessage('Please enter a username to join.');
@@ -580,10 +598,12 @@ function RoomPage() {
                 <h2 className="text-2xl font-semibold text-gray-300 mb-4">Room ID: <span className="text-indigo-400">{roomId}</span></h2>
                 <div className="relative w-full max-w-4xl bg-black rounded-lg overflow-hidden shadow-2xl aspect-video">
                     <ReactPlayer
+                        // *** FIX: Add a key prop that changes when videoUrl changes to force remount and reload ***
+                        key={videoUrl}
                         ref={playerRef}
                         url={videoUrl}
                         playing={isPlaying}
-                        controls={isHost} // Only show native controls for the host
+                        // Removed controls={isHost} from ReactPlayer itself to avoid conflicts and rely on custom overlay/buttons
                         onPlay={isHost ? handlePlayerPlay : undefined}
                         onPause={isHost ? handlePlayerPause : undefined}
                         onProgress={isHost ? handlePlayerProgress : undefined}
@@ -594,7 +614,7 @@ function RoomPage() {
                         config={{
                             youtube: {
                                 playerVars: {
-                                    controls: isHost ? 1 : 0, // YouTube's native controls only for host
+                                    controls: 0, // Never show native YouTube controls by default
                                     modestbranding: 1,
                                     showinfo: 0,
                                     rel: 0,
@@ -603,12 +623,12 @@ function RoomPage() {
                             },
                             vimeo: {
                                 playerOptions: {
-                                    controls: isHost ? 1 : 0,
+                                    controls: 0, // Never show native Vimeo controls by default
                                 }
                             }
                         }}
                     />
-                    {/* *** FIX: Overlay for non-hosts to prevent video interaction *** */}
+                    {/* Overlay for non-hosts to prevent video interaction */}
                     {!isHost && (
                         <div className="absolute inset-0 z-20 cursor-not-allowed bg-black opacity-0">
                             {/* This div covers the player and blocks clicks/taps */}
