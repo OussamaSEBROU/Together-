@@ -314,18 +314,28 @@ function RoomPage() {
         socket.on('room_created', (id) => { console.log('Host: Room created with ID', id); });
 
         socket.on('join_approved', (data) => {
-            console.log('Join approved! Received data:', data);
+            console.log('Join approved! Received data:', data); // Log the full data received
             setVideoUrl(data.videoUrl);
             setIsPlaying(data.videoState.playing);
             setCurrentTime(data.videoState.currentTime);
             setUsersInRoom(data.users);
-            // *** FIX: Ensure chat messages are correctly set from data.messages ***
-            setChatMessages(data.messages || []); // Set initial chat history
-            console.log("Chat messages after join_approved:", data.messages);
+
+            // *** CRITICAL FIX FOR CHAT HISTORY: Explicitly set chat messages ***
+            if (Array.isArray(data.messages)) {
+                setChatMessages(data.messages);
+                console.log("Chat messages after join_approved (from data.messages):", data.messages);
+            } else {
+                setChatMessages([]);
+                console.warn("Received non-array data.messages on join_approved:", data.messages);
+            }
+
             setStatusMessage('');
             if (playerRef.current) {
-                console.log(`Seeking player to ${data.videoState.currentTime}`);
+                console.log(`Seeking player to ${data.videoState.currentTime}, playing state: ${data.videoState.playing}`);
                 playerRef.current.seekTo(data.videoState.currentTime, 'seconds');
+                // Ensure player state is also explicitly set here
+                // Note: ReactPlayer's `playing` prop usually handles this, but forcing it can help
+                // if there are browser autoplay policy issues, the `playing` prop handles that.
             }
         });
 
@@ -353,25 +363,28 @@ function RoomPage() {
                 const player = playerRef.current;
                 const currentPlaybackTime = player.getCurrentTime();
 
-                // Only sync if difference is significant or play/pause states mismatch
-                if (Math.abs(currentPlaybackTime - state.currentTime) > 1 || player.getInternalPlayer().paused !== !state.playing) { // !state.playing because getInternalPlayer().paused is true when paused
-                    console.log(`[Video Sync] Non-host seeking from ${currentPlaybackTime.toFixed(2)} to ${state.currentTime.toFixed(2)}. Playing: ${state.playing}`);
+                // Check for significant time difference OR a mismatch in play/pause state
+                // `player.getInternalPlayer().paused` is true when paused, `state.playing` is true when playing
+                // So, if player is paused but should be playing, OR player is playing but should be paused, sync.
+                if (Math.abs(currentPlaybackTime - state.currentTime) > 1 || player.getInternalPlayer().paused === state.playing) {
+                     console.log(`[Video Sync] Non-host syncing. Current: ${currentPlaybackTime.toFixed(2)}, Target: ${state.currentTime.toFixed(2)}. Player Paused: ${player.getInternalPlayer().paused}, Target Playing: ${state.playing}`);
                     player.seekTo(state.currentTime, 'seconds');
                 }
 
+                // Explicitly set playing state
                 if (state.playing && player.getInternalPlayer().paused) {
                     console.log("[Video Sync] Non-host playing video.");
-                    setIsPlaying(true);
+                    setIsPlaying(true); // Triggers ReactPlayer to play
                 } else if (!state.playing && !player.getInternalPlayer().paused) {
                     console.log("[Video Sync] Non-host pausing video.");
-                    setIsPlaying(false);
+                    setIsPlaying(false); // Triggers ReactPlayer to pause
                 }
-                setCurrentTime(state.currentTime);
+                setCurrentTime(state.currentTime); // Update current time locally
             }
         });
 
         socket.on('video_url_updated', ({ videoUrl, videoState }) => {
-            console.log(`[Video URL Updated] Setting new URL: ${videoUrl}`);
+            console.log(`[Video URL Updated] Setting new URL: ${videoUrl}. Video state: ${JSON.stringify(videoState)}`);
             setVideoUrl(videoUrl);
             setIsPlaying(videoState.playing);
             setCurrentTime(videoState.currentTime);
@@ -381,10 +394,10 @@ function RoomPage() {
         });
 
         socket.on('chat_message', (msg) => {
-            console.log("Received chat message:", msg);
+            console.log("Received new chat message:", msg);
             setChatMessages(prev => {
                 const newChatMessages = [...prev, msg];
-                console.log("Current chat messages state:", newChatMessages);
+                console.log("Updated chat messages state (new message appended):", newChatMessages);
                 return newChatMessages;
             });
         });
@@ -429,14 +442,14 @@ function RoomPage() {
                 socket.off('error_message');
             }
         };
-    }, [roomId, username, isHost, navigate]); // *** FIX: Removed chatMessages from dependencies ***
+    }, [roomId, username, isHost, navigate]); // Removed videoUrl from dependencies (useEffect will react to setVideoUrl directly)
 
     // Effect for auto-scrolling chat messages to the bottom
     useEffect(() => {
         if (chatMessagesEndRef.current) {
             chatMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
-    }, [chatMessages]);
+    }, [chatMessages]); // This dependency is correct for scrolling
 
 
     // Handlers for host actions, wrapped in useCallback for performance
@@ -493,13 +506,12 @@ function RoomPage() {
     const handleInitialUsernameSubmit = () => {
         if (username.trim()) {
             setShowUsernameModal(false);
-            // Re-trigger useEffect to connect to socket now that username is set
-            if (!socket) { // Ensure socket is created if not already
+            if (!socket) {
                  socket = io(SERVER_URL);
             }
-            if (!isHost) { // Only send join_request if not host
+            if (!isHost) {
                  socket.emit('join_request', { roomId, username });
-            } else if (isHost && videoUrl) { // If host and video already set, ensure room is created
+            } else if (isHost && videoUrl) {
                 socket.emit('create_room', { username, videoUrl });
             }
         } else {
@@ -598,12 +610,13 @@ function RoomPage() {
                 <h2 className="text-2xl font-semibold text-gray-300 mb-4">Room ID: <span className="text-indigo-400">{roomId}</span></h2>
                 <div className="relative w-full max-w-4xl bg-black rounded-lg overflow-hidden shadow-2xl aspect-video">
                     <ReactPlayer
-                        // *** FIX: Add a key prop that changes when videoUrl changes to force remount and reload ***
+                        // Use videoUrl as key to force remount on URL change (important for non-hosts)
                         key={videoUrl}
                         ref={playerRef}
                         url={videoUrl}
                         playing={isPlaying}
-                        // Removed controls={isHost} from ReactPlayer itself to avoid conflicts and rely on custom overlay/buttons
+                        // Controls are never shown natively on ReactPlayer, we rely on custom ones for host
+                        controls={false} // Ensure native controls are always off
                         onPlay={isHost ? handlePlayerPlay : undefined}
                         onPause={isHost ? handlePlayerPause : undefined}
                         onProgress={isHost ? handlePlayerProgress : undefined}
@@ -614,16 +627,16 @@ function RoomPage() {
                         config={{
                             youtube: {
                                 playerVars: {
-                                    controls: 0, // Never show native YouTube controls by default
+                                    controls: 0, // Never show native YouTube controls
                                     modestbranding: 1,
                                     showinfo: 0,
                                     rel: 0,
-                                    autoplay: 0,
+                                    autoplay: 0, // Autoplay can be problematic, rely on `playing` prop
                                 }
                             },
                             vimeo: {
                                 playerOptions: {
-                                    controls: 0, // Never show native Vimeo controls by default
+                                    controls: 0, // Never show native Vimeo controls
                                 }
                             }
                         }}
