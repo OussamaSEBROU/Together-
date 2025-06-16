@@ -429,4 +429,211 @@ function RoomPage() {
 
     if (showUsernameModal) {
         return (
-            <div className="fixed inset-0 bg-gray-900 bg-opacity-95 flex items-center
+            <div className="fixed inset-0 bg-gray-900 bg-opacity-95 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-800 p-8 rounded-2xl shadow-2xl text-center flex flex-col items-center space-y-6 max-w-sm w-full border border-gray-700">
+                    <h2 className="text-3xl font-bold text-indigo-400">Enter Your Username</h2>
+                    <input
+                        type="text"
+                        placeholder="Your Username"
+                        className="w-full p-3 rounded-xl bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-200 placeholder-gray-400"
+                        value={username}
+                        onChange={(e) => { setUsername(e.target.value); setStatusMessage(''); }}
+                    />
+                    <button
+                        onClick={handleInitialUsernameSubmit}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl transition duration-300 ease-in-out transform hover:scale-105 shadow-md w-full"
+                    >
+                        Join Room
+                    </button>
+                    {statusMessage && (
+                        <p className="text-red-400 text-sm">{statusMessage}</p>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    if (statusMessage) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-6rem)] text-center animate-fade-in px-4">
+                <p className="text-xl text-yellow-300 bg-gray-700 p-6 rounded-xl shadow-xl border border-gray-600">{statusMessage}</p>
+                {statusMessage.includes('Redirecting') && (
+                    <button
+                        onClick={() => navigate('/')}
+                        className="mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition duration-300 ease-in-out transform hover:scale-105 shadow-lg"
+                    >
+                        Go to Home
+                    </button>
+                )}
+            </div>
+        );
+    }
+
+    if (!videoUrl && !isHost) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-6rem)] text-center animate-fade-in px-4">
+                <p className="text-xl text-indigo-300 bg-gray-700 p-6 rounded-xl shadow-xl border border-gray-600">
+                    Waiting for host to set a video URL or for host to approve your join request...
+                </p>
+            </div>
+        );
+    }
+    if (!videoUrl && isHost) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-6rem)] text-center animate-fade-in px-4">
+                <p className="text-xl text-indigo-300 bg-gray-700 p-6 rounded-xl shadow-xl border border-gray-600 mb-6">
+                    You are the host. Please set the video URL to start the session.
+                </p>
+                <button
+                    onClick={handleSetVideoUrl}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition duration-300 ease-in-out transform hover:scale-105 shadow-lg flex items-center gap-2"
+                >
+                    <LinkIcon className="h-6 w-6" /> Set Video URL
+                </button>
+            </div>
+        );
+    }
+
+
+    return (
+        <div className="flex flex-col lg:flex-row w-full max-w-7xl gap-8">
+            {/* Video Player Section */}
+            <div className="flex-1 flex flex-col items-center bg-gray-800 rounded-2xl shadow-lg p-6 border border-gray-700">
+                <h2 className="text-2xl font-semibold text-gray-300 mb-4">Room ID: <span className="text-indigo-400">{roomId}</span></h2>
+                <div className="relative w-full max-w-4xl bg-black rounded-lg overflow-hidden shadow-2xl aspect-video">
+                    <ReactPlayer
+                        ref={playerRef}
+                        url={videoUrl}
+                        playing={isPlaying}
+                        controls={isHost} // Only host sees native controls (ReactPlayer usually shows its own based on platform)
+                        onPlay={handlePlayerPlay}
+                        onPause={handlePlayerPause}
+                        onProgress={handlePlayerProgress}
+                        // onSeek callback for manual seek from native controls, react-player will call onProgress after seek
+                        onEnded={() => setIsPlaying(false)} // Stop playing when video ends
+                        width="100%"
+                        height="100%"
+                        style={{ position: 'absolute', top: 0, left: 0 }}
+                        config={{
+                            youtube: {
+                                playerVars: {
+                                    controls: isHost ? 1 : 0, // Show YouTube's native controls only for host
+                                    modestbranding: 1,
+                                    showinfo: 0,
+                                    rel: 0,
+                                    autoplay: 0,
+                                }
+                            },
+                            // Add other platforms if needed, e.g., vimeo, dailymotion
+                            vimeo: {
+                                playerOptions: {
+                                    controls: isHost ? 1 : 0,
+                                    // other Vimeo options
+                                }
+                            }
+                        }}
+                    />
+                    {/* Custom controls for host overlaying the player, or just use native ones as configured above */}
+                    {isHost && (
+                         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4 bg-gray-900 bg-opacity-70 p-3 rounded-full shadow-lg z-10">
+                            <button
+                                onClick={handlePlayerPlay}
+                                className="p-3 bg-indigo-600 rounded-full hover:bg-indigo-700 transition duration-200 transform hover:scale-110 shadow-lg"
+                                title="Play"
+                            >
+                                <PlayCircleIcon className="h-8 w-8 text-white" />
+                            </button>
+                            <button
+                                onClick={handlePlayerPause}
+                                className="p-3 bg-indigo-600 rounded-full hover:bg-indigo-700 transition duration-200 transform hover:scale-110 shadow-lg"
+                                title="Pause"
+                            >
+                                <PauseCircleIcon className="h-8 w-8 text-white" />
+                            </button>
+                            <button
+                                onClick={handleSetVideoUrl}
+                                className="p-3 bg-blue-600 rounded-full hover:bg-blue-700 transition duration-200 transform hover:scale-110 shadow-lg"
+                                title="Change Video URL"
+                            >
+                                <LinkIcon className="h-8 w-8 text-white" />
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Host Controls (for join requests) */}
+                {isHost && pendingRequests.length > 0 && (
+                    <div className="mt-8 w-full max-w-xl bg-gray-700 p-5 rounded-2xl shadow-md border border-gray-600">
+                        <h3 className="text-xl font-semibold text-gray-200 mb-4 flex items-center gap-2">
+                            <UserPlusIcon className="h-6 w-6 text-yellow-400" /> Pending Join Requests
+                        </h3>
+                        <ul className="space-y-3">
+                            {pendingRequests.map((request) => (
+                                <li key={request.requesterSocketId} className="flex items-center justify-between p-3 bg-gray-600 rounded-lg shadow-sm border border-gray-500">
+                                    <span className="text-gray-100 font-medium">{request.username}</span>
+                                    <div className="flex space-x-2">
+                                        <button
+                                            onClick={() => handleApproveJoin(request.requesterSocketId)}
+                                            className="p-2 bg-green-500 rounded-full hover:bg-green-600 transition duration-200 transform hover:scale-110 shadow-md"
+                                            title="Approve"
+                                        >
+                                            <CheckCircleIcon className="h-6 w-6 text-white" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleRejectJoin(request.requesterSocketId)}
+                                            className="p-2 bg-red-500 rounded-full hover:bg-red-600 transition duration-200 transform hover:scale-110 shadow-md"
+                                            title="Reject"
+                                        >
+                                            <XCircleIcon className="h-6 w-6 text-white" />
+                                        </button>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
+            </div>
+
+            {/* Chat and User List Section */}
+            <div className="flex-1 flex flex-col bg-gray-800 rounded-2xl shadow-lg p-6 max-w-md w-full lg:max-w-none border border-gray-700">
+                <h3 className="text-2xl font-semibold text-gray-300 mb-4">Chat</h3>
+                <div className="flex-grow flex flex-col bg-gray-700 rounded-xl overflow-hidden mb-4 shadow-inner border border-gray-600">
+                    <div className="flex-grow p-4 overflow-y-auto custom-scrollbar">
+                        {chatMessages.map((msg, index) => (
+                            <div key={index} className="mb-2 text-sm">
+                                <span className="font-bold text-indigo-300">{msg.username}:</span>{' '}
+                                <span className="text-gray-200 break-words">{msg.message}</span>
+                                <span className="text-gray-400 ml-2 text-xs">
+                                    {new Date(msg.timestamp).toLocaleTimeString()}
+                                </span>
+                            </div>
+                        ))}
+                        <div ref={chatMessagesEndRef} /> {/* For auto-scrolling */}
+                    </div>
+                    <form onSubmit={handleSendMessage} className="p-4 bg-gray-600 flex items-center gap-3 border-t border-gray-500">
+                        <input
+                            type="text"
+                            placeholder="Type your message..."
+                            className="flex-grow p-3 rounded-xl bg-gray-700 border border-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-gray-200 placeholder-gray-400"
+                            value={newMessage}
+                            onChange={(e) => setNewMessage(e.target.value)}
+                        />
+                        <button
+                            type="submit"
+                            className="p-3 bg-indigo-600 rounded-full hover:bg-indigo-700 transition duration-200 transform hover:scale-110 shadow-md"
+                            title="Send Message"
+                        >
+                            <PaperAirplaneIcon className="h-6 w-6 text-white" />
+                        </button>
+                    </form>
+                </div>
+
+                <h3 className="text-2xl font-semibold text-gray-300 mb-4">Users in Room ({usersInRoom.length})</h3>
+                <ul className="bg-gray-700 rounded-xl p-4 max-h-48 overflow-y-auto custom-scrollbar border border-gray-600 shadow-inner">
+                    {usersInRoom.map((user, index) => (
+                        <li key={index} className="flex items-center text-gray-200 mb-2 p-1">
+                            <span className={`inline-block w-3 h-3 rounded-full mr-3 ${isHost && user.socketId === socket?.id ? 'bg-indigo-400' : 'bg-green-400'}`}></span>
+                            <span className="font-medium">{user.username}</span>
+                            {/* Check if the current user (this client) is the host */}
+                            {isHost && user.
