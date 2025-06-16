@@ -81,13 +81,12 @@ function App() {
 // --- HomePage Component ---
 function HomePage() {
     const [username, setUsername] = useState('');
-    const [createRoomVideoUrl, setCreateRoomVideoUrl] = useState(''); // Separate state for create room video URL
+    const [createRoomVideoUrl, setCreateRoomVideoUrl] = useState('');
     const [joinRoomId, setJoinRoomId] = useState('');
     const [error, setError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
     const navigate = useNavigate();
 
-    // Reset error/success messages whenever inputs change
     const handleInputChange = (setter, value) => {
         setter(value);
         setError('');
@@ -136,7 +135,6 @@ function HomePage() {
             socket = io(SERVER_URL);
         }
 
-        // Navigate without waiting for server response, join request will be sent on RoomPage
         navigate(`/room/${joinRoomId}`, { state: { username: username, isHost: false } });
     };
 
@@ -295,23 +293,14 @@ function RoomPage() {
             socket = io(SERVER_URL);
         }
 
-        // Handle re-connections or fresh joins for non-hosts
-        if (!isHost) { // For participants (non-hosts)
+        if (!isHost) {
             socket.emit('join_request', { roomId, username });
-        } else { // For the host
-            // If host reconnects/refreshes, and videoUrl is not in state (e.g., direct URL access),
-            // then we need to ensure the room exists or prompt for video.
-            // This is primarily for the *initial* host creation flow.
+        } else {
+            // If host, room should have been created via HomePage.
+            // This ensures the socket is joined and host state is correct on refresh.
             if (!videoUrl) {
-                // If a host navigates directly to /room/:roomId without creating it first,
-                // they need to set the video. The modal handles getting username.
-                // The statusMessage below handles the "waiting for video" state.
                 setStatusMessage('You are the host. Please set the video URL to start the session.');
             } else {
-                 // If host, room should have been created via HomePage.
-                 // This part primarily ensures the socket is joined to the room
-                 // and the host's state (videoUrl, playing) is correct on refresh.
-                 // The server logic for 'create_room' is idempotent enough.
                 socket.emit('create_room', { username, videoUrl });
             }
         }
@@ -321,12 +310,13 @@ function RoomPage() {
         socket.on('room_created', (id) => { console.log('Host: Room created with ID', id); });
 
         socket.on('join_approved', (data) => {
-            console.log('Join approved!', data);
+            console.log('Join approved! Received data:', data); // Log the received data
             setVideoUrl(data.videoUrl);
             setIsPlaying(data.videoState.playing);
             setCurrentTime(data.videoState.currentTime);
             setUsersInRoom(data.users);
-            setChatMessages(data.messages || []); // *** FIX: Load chat history for new users ***
+            // *** FIX: Ensure chat messages are correctly set from data.messages ***
+            setChatMessages(data.messages || []);
             setStatusMessage('');
             if (playerRef.current) {
                 playerRef.current.seekTo(data.videoState.currentTime, 'seconds');
@@ -357,7 +347,7 @@ function RoomPage() {
                 const player = playerRef.current;
                 const currentPlaybackTime = player.getCurrentTime();
 
-                if (Math.abs(currentPlaybackTime - state.currentTime) > 1 || player.getInternalPlayer().paused === state.playing) {
+                if (Math.abs(currentPlaybackTime - state.currentTime) > 1 || player.getInternalPlayer().paused !== state.playing) { // Fixed comparison
                     player.seekTo(state.currentTime, 'seconds');
                 }
 
@@ -380,12 +370,10 @@ function RoomPage() {
         });
 
         socket.on('chat_message', (msg) => {
-            // This is working correctly to append new messages if they are received.
             setChatMessages(prev => [...prev, msg]);
         });
 
         socket.on('user_joined', ({ username, socketId }) => {
-            // Only add if not already present to prevent duplicates on re-renders
             setUsersInRoom(prev => {
                 if (prev.some(u => u.socketId === socketId)) return prev;
                 return [...prev, { username, socketId }];
@@ -423,7 +411,7 @@ function RoomPage() {
                 socket.off('error_message');
             }
         };
-    }, [roomId, username, isHost, videoUrl, navigate]); // Removed videoUrl from dependencies if it was causing issues, added back if needed for host flow
+    }, [roomId, username, isHost, videoUrl, navigate]);
 
     useEffect(() => { chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
 
@@ -458,8 +446,6 @@ function RoomPage() {
         }
     }, [isHost, currentTime]);
 
-    // This handler isn't strictly needed for ReactPlayer's native controls,
-    // but useful if you implement custom seek bars.
     const handlePlayerSeek = useCallback((newTime) => {
         if (isHost && playerRef.current) {
             playerRef.current.seekTo(newTime, 'seconds');
@@ -476,9 +462,6 @@ function RoomPage() {
         if (newMessage.trim() && socket) {
             socket.emit('chat_message', newMessage.trim());
             setNewMessage('');
-            // Optimistic update for sender's chat display
-            // The actual message with correct username (including -admin) will come from server
-            // setChatMessages(prev => [...prev, { username: username, message: newMessage.trim(), timestamp: Date.now() }]);
         }
     };
 
@@ -497,10 +480,8 @@ function RoomPage() {
     const handleInitialUsernameSubmit = () => {
         if (username.trim()) {
             setShowUsernameModal(false);
-            // After setting username from modal, re-trigger useEffect to connect socket properly
-            // The useEffect logic already handles if it's host or not
             if (!isHost) {
-                 socket = io(SERVER_URL); // Ensure socket is re-initialized if modal caused early return
+                 socket = io(SERVER_URL);
                  socket.emit('join_request', { roomId, username });
             }
         } else {
@@ -550,7 +531,7 @@ function RoomPage() {
         );
     }
 
-    if (statusMessage && !statusMessage.includes('You are the host')) { // Display status messages other than the host's initial video prompt
+    if (statusMessage && !statusMessage.includes('You are the host')) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-6rem)] text-center animate-fade-in px-4">
                 <p className="text-xl text-yellow-300 bg-gray-700 p-6 rounded-xl shadow-xl border border-gray-600">{statusMessage}</p>
@@ -566,7 +547,7 @@ function RoomPage() {
         );
     }
 
-    if (!videoUrl && isHost) { // Specific prompt for host to set video
+    if (!videoUrl && isHost) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-6rem)] text-center animate-fade-in px-4">
                 <p className="text-xl text-indigo-300 bg-gray-700 p-6 rounded-xl shadow-xl border border-gray-600 mb-6">
@@ -581,7 +562,7 @@ function RoomPage() {
             </div>
         );
     }
-    if (!videoUrl && !isHost) { // For non-hosts waiting for host to set video
+    if (!videoUrl && !isHost) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-6rem)] text-center animate-fade-in px-4">
                 <p className="text-xl text-indigo-300 bg-gray-700 p-6 rounded-xl shadow-xl border border-gray-600">
@@ -602,15 +583,10 @@ function RoomPage() {
                         ref={playerRef}
                         url={videoUrl}
                         playing={isPlaying}
-                        // Only show controls for the host
-                        controls={isHost}
-                        // Conditionally attach event handlers based on isHost
+                        controls={isHost} // Only show native controls for the host
                         onPlay={isHost ? handlePlayerPlay : undefined}
                         onPause={isHost ? handlePlayerPause : undefined}
                         onProgress={isHost ? handlePlayerProgress : undefined}
-                        // onSeek is usually triggered by native controls or a custom slider,
-                        // if native controls are off, this won't fire unless you add a custom one.
-                        // For synchronization, `onProgress` and manual `seekTo` via `video_sync` are key.
                         onEnded={() => setIsPlaying(false)}
                         width="100%"
                         height="100%"
@@ -618,7 +594,7 @@ function RoomPage() {
                         config={{
                             youtube: {
                                 playerVars: {
-                                    controls: isHost ? 1 : 0, // Show YouTube's native controls only for host
+                                    controls: isHost ? 1 : 0, // YouTube's native controls only for host
                                     modestbranding: 1,
                                     showinfo: 0,
                                     rel: 0,
@@ -632,6 +608,13 @@ function RoomPage() {
                             }
                         }}
                     />
+                    {/* *** FIX: Overlay for non-hosts to prevent video interaction *** */}
+                    {!isHost && (
+                        <div className="absolute inset-0 z-20 cursor-not-allowed bg-black opacity-0">
+                            {/* This div covers the player and blocks clicks/taps */}
+                        </div>
+                    )}
+
                     {/* Custom controls for host overlaying the player */}
                     {isHost && (
                          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4 bg-gray-900 bg-opacity-70 p-3 rounded-full shadow-lg z-10">
