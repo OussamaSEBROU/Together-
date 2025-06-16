@@ -1,23 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
 import io from 'socket.io-client';
-import ReactPlayer from 'react-player'; // Import react-player
+import ReactPlayer from 'react-player'; // <<< IMPORTANT: Make sure this is present
 import { PlayCircleIcon, PauseCircleIcon, PaperAirplaneIcon, UserPlusIcon, XCircleIcon, CheckCircleIcon, LinkIcon, VideoCameraIcon, UsersIcon } from '@heroicons/react/24/solid';
 
 // Define the backend server URL.
-// In a production environment (like Render.com), process.env.REACT_APP_SERVER_URL will be injected.
-// For local development, it defaults to http://localhost:3001.
 const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:3001';
 
-// Global Socket.io instance to ensure it's managed correctly
-// Use a ref to hold the socket instance across renders
 let socket;
 
-// Helper function to validate video URLs
+// Helper function to validate video URLs using ReactPlayer's capabilities
 const isValidVideoUrl = (url) => {
-    // React-player handles many formats, so we just need a basic URL validation now.
-    // It will return false for obviously invalid URLs.
-    return ReactPlayer.canPlay(url);
+    return ReactPlayer.canPlay(url); // This will handle YouTube, Vimeo, MP4 etc.
 };
 
 
@@ -51,13 +45,11 @@ function HomePage() {
             setError('Please enter a username.');
             return;
         }
-        // Use the updated isValidVideoUrl which leverages react-player's capability
         if (!isValidVideoUrl(videoUrl)) {
-            setError('Please enter a valid video link (e.g., YouTube, .mp4, etc.).');
+            setError('Please enter a valid video link (e.g., YouTube, Vimeo, .mp4).'); // Updated message
             return;
         }
 
-        // Initialize socket if not already initialized
         if (!socket) {
             socket = io(SERVER_URL);
         }
@@ -72,7 +64,7 @@ function HomePage() {
 
         socket.on('error_message', (msg) => {
             setError(msg);
-            setTimeout(() => setError(''), 3000); // Clear error after 3 seconds
+            setTimeout(() => setError(''), 3000);
         });
     };
 
@@ -86,12 +78,10 @@ function HomePage() {
             return;
         }
 
-        // Initialize socket if not already initialized
         if (!socket) {
             socket = io(SERVER_URL);
         }
 
-        // Navigate immediately to the room, where the join request will be made
         navigate(`/room/${joinRoomId}`, { state: { username: username, isHost: false } });
     };
 
@@ -114,7 +104,7 @@ function HomePage() {
                     </h2>
                     <input
                         type="text"
-                        placeholder="Video Link (e.g., YouTube, .mp4, etc.)"
+                        placeholder="Video Link (e.g., YouTube, Vimeo, .mp4)" // Updated placeholder
                         className="w-full p-4 mb-4 rounded-xl bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-200 placeholder-gray-400 text-lg"
                         value={videoUrl}
                         onChange={(e) => { setVideoUrl(e.target.value); setError(''); setSuccessMessage(''); }}
@@ -199,8 +189,8 @@ function RoomPage() {
     const { roomId } = useParams();
     const location = useLocation();
     const navigate = useNavigate();
-    const playerRef = useRef(null); // Use a ref for the ReactPlayer component
-    const chatMessagesEndRef = useRef(null); // Ref for auto-scrolling chat
+    const playerRef = useRef(null); // Ref for the ReactPlayer component
+    const chatMessagesEndRef = useRef(null);
 
     const [username, setUsername] = useState(location.state?.username || '');
     const [isHost, setIsHost] = useState(location.state?.isHost || false);
@@ -213,6 +203,7 @@ function RoomPage() {
     const [pendingRequests, setPendingRequests] = useState([]);
     const [statusMessage, setStatusMessage] = useState('');
     const [showUsernameModal, setShowUsernameModal] = useState(false);
+
 
     // Effect to handle socket connection and events
     useEffect(() => {
@@ -306,7 +297,7 @@ function RoomPage() {
         });
 
         socket.on('user_left', ({ username }) => {
-            setUsersInRoom(prev => prev.filter(u => u.username !== username)); // Filter by username as socketId might be old
+            setUsersInRoom(prev => prev.filter(u => u.username !== username));
             setChatMessages(prev => [...prev, { username: 'System', message: `${username} left the room.`, timestamp: Date.now() }]);
         });
 
@@ -355,7 +346,7 @@ function RoomPage() {
             }
             setCurrentTime(state.playedSeconds);
         }
-    }, [isHost, isPlaying, currentTime]); // Add currentTime to dependencies
+    }, [isHost, isPlaying, currentTime]);
 
     const handlePlayerPlay = useCallback(() => {
         if (isHost) {
@@ -377,20 +368,16 @@ function RoomPage() {
         }
     }, [isHost, currentTime]);
 
-    const handlePlayerSeek = useCallback((e) => {
-        // This handler might be too simplistic for direct seek events from react-player's controls
-        // ReactPlayer's onProgress or its internal player's 'seeked' event is usually better.
-        // For custom seek controls (e.g., a slider), you'd manually call seekTo and then emit sync.
+    const handlePlayerSeek = useCallback((newTime) => { // Changed 'e' to 'newTime' for clarity (expects seconds)
         if (isHost && playerRef.current) {
-             // After a seek, ReactPlayer will trigger onProgress with the new time.
-             // We ensure playing state is correct.
-            setIsPlaying(playerRef.current ? !playerRef.current.getInternalPlayer().paused : false);
+            playerRef.current.seekTo(newTime, 'seconds'); // Explicitly seek
+            setIsPlaying(playerRef.current.props.playing); // Keep playing state as it was after seek
             socket.emit('video_sync', {
-                playing: playerRef.current ? !playerRef.current.getInternalPlayer().paused : false,
-                currentTime: playerRef.current ? playerRef.current.getCurrentTime() : currentTime // Use currentTime after seek
+                playing: playerRef.current.props.playing,
+                currentTime: newTime
             });
         }
-    }, [isHost, currentTime]);
+    }, [isHost]); // No need for currentTime here if newTime is passed directly
 
 
     const handleSendMessage = (e) => {
@@ -403,8 +390,8 @@ function RoomPage() {
     };
 
     const handleSetVideoUrl = () => {
-        const newUrl = prompt("Enter new video URL (e.g., YouTube, .mp4, etc.):");
-        if (newUrl && isValidVideoUrl(newUrl)) { // Use updated isValidVideoUrl
+        const newUrl = prompt("Enter new video URL (e.g., YouTube, Vimeo, .mp4, etc.):");
+        if (newUrl && isValidVideoUrl(newUrl)) {
             if (socket) {
                 socket.emit('set_video_url', { roomId, videoUrl: newUrl });
             }
@@ -500,11 +487,12 @@ function RoomPage() {
                         ref={playerRef}
                         url={videoUrl}
                         playing={isPlaying}
-                        controls={false} // ReactPlayer handles its own controls internally, we use custom ones
+                        controls={isHost} // Only host sees native controls (ReactPlayer usually shows its own based on platform)
                         onPlay={handlePlayerPlay}
                         onPause={handlePlayerPause}
-                        onProgress={handlePlayerProgress} // Continuously get progress for host sync
-                        onSeek={handlePlayerSeek} // For manual seeking events by host
+                        onProgress={handlePlayerProgress}
+                        // onSeek callback for manual seek from native controls, react-player will call onProgress after seek
+                        onEnded={() => setIsPlaying(false)} // Stop playing when video ends
                         width="100%"
                         height="100%"
                         style={{ position: 'absolute', top: 0, left: 0 }}
@@ -512,14 +500,22 @@ function RoomPage() {
                             youtube: {
                                 playerVars: {
                                     controls: isHost ? 1 : 0, // Show YouTube's native controls only for host
-                                    modestbranding: 1, // Hide YouTube logo for a cleaner look
-                                    showinfo: 0, // Hide video title and uploader info
-                                    rel: 0, // Prevent related videos at end
-                                    autoplay: 0, // Controlled by 'playing' prop
+                                    modestbranding: 1,
+                                    showinfo: 0,
+                                    rel: 0,
+                                    autoplay: 0,
+                                }
+                            },
+                            // Add other platforms if needed, e.g., vimeo, dailymotion
+                            vimeo: {
+                                playerOptions: {
+                                    controls: isHost ? 1 : 0,
+                                    // other Vimeo options
                                 }
                             }
                         }}
                     />
+                    {/* Custom controls for host overlaying the player, or just use native ones as configured above */}
                     {isHost && (
                          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4 bg-gray-900 bg-opacity-70 p-3 rounded-full shadow-lg z-10">
                             <button
@@ -638,4 +634,3 @@ function RoomPage() {
 }
 
 export default App;
-
