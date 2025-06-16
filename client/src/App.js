@@ -413,14 +413,16 @@ function RoomPage() {
     const handleApproveJoin = (requesterSocketId) => {
         if (socket && isHost) {
             socket.emit('approve_join', { roomId, requesterSocketId });
-            setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId));
+            // Removed optimistic update: setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId));
+            // The pendingRequests state will now be updated by the 'room_data_update' event from the server.
         }
     };
 
     const handleRejectJoin = (requesterSocketId) => {
         if (socket && isHost) {
             socket.emit('reject_join', { roomId, requesterSocketId });
-            setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId));
+            // Removed optimistic update: setPendingRequests(prev => prev.filter(req => req.requesterSocketId !== requesterSocketId));
+            // The pendingRequests state will now be updated by the 'room_data_update' event from the server.
         }
     };
 
@@ -533,120 +535,4 @@ function RoomPage() {
                     />
                     {/* Custom controls for host overlaying the player, or just use native ones as configured above */}
                     {isHost && (
-                         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4 bg-gray-900 bg-opacity-70 p-3 rounded-full shadow-lg z-10">
-                            <button
-                                onClick={handlePlayerPlay}
-                                className="p-3 bg-indigo-600 rounded-full hover:bg-indigo-700 transition duration-200 transform hover:scale-110 shadow-lg"
-                                title="Play"
-                            >
-                                <PlayCircleIcon className="h-8 w-8 text-white" />
-                            </button>
-                            <button
-                                onClick={handlePlayerPause}
-                                className="p-3 bg-indigo-600 rounded-full hover:bg-indigo-700 transition duration-200 transform hover:scale-110 shadow-lg"
-                                title="Pause"
-                            >
-                                <PauseCircleIcon className="h-8 w-8 text-white" />
-                            </button>
-                            <button
-                                onClick={handleSetVideoUrl}
-                                className="p-3 bg-blue-600 rounded-full hover:bg-blue-700 transition duration-200 transform hover:scale-110 shadow-lg"
-                                title="Change Video URL"
-                            >
-                                <LinkIcon className="h-8 w-8 text-white" />
-                            </button>
-                        </div>
-                    )}
-                </div>
-
-                {/* Host Controls (for join requests) */}
-                {isHost && pendingRequests.length > 0 && (
-                    <div className="mt-8 w-full max-w-xl bg-gray-700 p-5 rounded-2xl shadow-md border border-gray-600">
-                        <h3 className="text-xl font-semibold text-gray-200 mb-4 flex items-center gap-2">
-                            <UserPlusIcon className="h-6 w-6 text-yellow-400" /> Pending Join Requests
-                        </h3>
-                        <ul className="space-y-3">
-                            {pendingRequests.map((request) => (
-                                <li key={request.requesterSocketId} className="flex items-center justify-between p-3 bg-gray-600 rounded-lg shadow-sm border border-gray-500">
-                                    <span className="text-gray-100 font-medium">{request.username}</span>
-                                    <div className="flex space-x-2">
-                                        <button
-                                            onClick={() => handleApproveJoin(request.requesterSocketId)}
-                                            className="p-2 bg-green-500 rounded-full hover:bg-green-600 transition duration-200 transform hover:scale-110 shadow-md"
-                                            title="Approve"
-                                        >
-                                            <CheckCircleIcon className="h-6 w-6 text-white" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleRejectJoin(request.requesterSocketId)}
-                                            className="p-2 bg-red-500 rounded-full hover:bg-red-600 transition duration-200 transform hover:scale-110 shadow-md"
-                                            title="Reject"
-                                        >
-                                            <XCircleIcon className="h-6 w-6 text-white" />
-                                        </button>
-                                    </div>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-
-            </div>
-
-            {/* Chat and User List Section */}
-            <div className="flex-1 flex flex-col bg-gray-800 rounded-2xl shadow-lg p-6 max-w-md w-full lg:max-w-none border border-gray-700">
-                <h3 className="text-2xl font-semibold text-gray-300 mb-4">Chat</h3>
-                <div className="flex-grow flex flex-col bg-gray-700 rounded-xl overflow-hidden mb-4 shadow-inner border border-gray-600">
-                    <div className="flex-grow p-4 overflow-y-auto custom-scrollbar">
-                        {chatMessages.map((msg, index) => (
-                            <div key={index} className="mb-2 text-sm">
-                                <span className="font-bold text-indigo-300">{msg.username}:</span>{' '}
-                                <span className="text-gray-200 break-words">{msg.message}</span>
-                                <span className="text-gray-400 ml-2 text-xs">
-                                    {new Date(msg.timestamp).toLocaleTimeString()}
-                                </span>
-                            </div>
-                        ))}
-                        <div ref={chatMessagesEndRef} /> {/* For auto-scrolling */}
-                    </div>
-                    <form onSubmit={handleSendMessage} className="p-4 bg-gray-600 flex items-center gap-3 border-t border-gray-500">
-                        <input
-                            type="text"
-                            placeholder="Type your message..."
-                            className="flex-grow p-3 rounded-xl bg-gray-700 border border-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-gray-200 placeholder-gray-400"
-                            value={newMessage}
-                            onChange={(e) => setNewMessage(e.target.value)}
-                        />
-                        <button
-                            type="submit"
-                            className="p-3 bg-indigo-600 rounded-full hover:bg-indigo-700 transition duration-200 transform hover:scale-110 shadow-md"
-                            title="Send Message"
-                        >
-                            <PaperAirplaneIcon className="h-6 w-6 text-white" />
-                        </button>
-                    </form>
-                </div>
-
-                <h3 className="text-2xl font-semibold text-gray-300 mb-4">Users in Room ({usersInRoom.length})</h3>
-                <ul className="bg-gray-700 rounded-xl p-4 max-h-48 overflow-y-auto custom-scrollbar border border-gray-600 shadow-inner">
-                    {usersInRoom.map((user, index) => (
-                        <li key={index} className="flex items-center text-gray-200 mb-2 p-1">
-                            <span className={`inline-block w-3 h-3 rounded-full mr-3 ${isHost && user.socketId === socket?.id ? 'bg-indigo-400' : 'bg-green-400'}`}></span>
-                            <span className="font-medium">{user.username}</span>
-                            {/* Check if the current user (this client) is the host */}
-                            {isHost && user.socketId === socket?.id && <span className="text-purple-400 ml-2 text-sm">(Host, You)</span>}
-                            {/* Check if this is the current client (but not the host, as handled above) */}
-                            {!isHost && user.socketId === socket?.id && <span className="text-gray-400 ml-2 text-sm">(You)</span>}
-                            {/* If the current client is the host, mark the user in the list with matching socketId as (Host) */}
-                            {isHost && user.socketId === usersInRoom.find(u => u.socketId === socket?.id)?.socketId && user.socketId !== socket?.id && (
-                                <span className="text-purple-400 ml-2 text-sm">(Host)</span>
-                            )}
-                        </li>
-                    ))}
-                </ul>
-            </div>
-        </div>
-    );
-}
-
-export default App;
+                         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4 bg-gray-900 bg-opacity-70 p-3 rounded-
